@@ -1,0 +1,132 @@
+name: Android Release (signed AAB → Play)
+
+# Builds a signed Android App Bundle (.aab) for SIR and, when configured,
+# uploads it straight to your Google Play account (internal testing track).
+#
+# Trigger it manually from the GitHub "Actions" tab (Run workflow), or it runs
+# automatically when you push a tag like v1.0.0.
+#
+# Required repo secrets (Settings ▸ Secrets and variables ▸ Actions):
+#   ANDROID_KEYSTORE_BASE64   - your upload keystore (.jks) base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD - keystore (store) password
+#   ANDROID_KEY_ALIAS         - key alias (e.g. sir-upload)
+#   ANDROID_KEY_PASSWORD      - key password
+#   PLAY_SERVICE_ACCOUNT_JSON - (optional) Play Developer API service-account JSON.
+#                               If set, the signed .aab is uploaded automatically.
+#
+# The signed .aab is ALWAYS uploaded as a downloadable build artifact, so even
+# without the Play service account you can grab the bundle and upload it by hand.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      versionName:
+        description: 'Version name (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      versionCode:
+        description: 'Version code (integer, must increase each upload)'
+        required: true
+        default: '1'
+      playTrack:
+        description: 'Play track to publish to (internal / alpha / beta / production)'
+        required: true
+        default: 'internal'
+
+jobs:
+  build-signed-aab:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reminder-packager
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: reminder-packager/package-lock.json
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Capacitor sync (android)
+        run: npx cap sync android
+
+      - name: Decode upload keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/sir-upload.jks
+          if [ ! -s android/app/sir-upload.jks ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty."
+            exit 1
+          fi
+
+      - name: Write key.properties
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=sir-upload.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Resolve version fields
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ github.event.inputs.versionName }}" >> "$GITHUB_OUTPUT"
+            echo "code=${{ github.event.inputs.versionCode }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${GITHUB_REF_NAME#v}"
+            echo "name=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease \
+            -PsirVersionName=${{ steps.ver.outputs.name }} \
+            -PsirVersionCode=${{ steps.ver.outputs.code }} \
+            --no-daemon
+
+      - name: Upload AAB as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sir-release-aab-${{ steps.ver.outputs.name }}
+          path: reminder-packager/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Publish to Google Play (if service account configured)
+        if: ${{ env.HAS_PLAY_SA == 'true' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.networkcreation.reminderpackager
+          releaseFiles: reminder-packager/android/app/build/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.playTrack || 'internal' }}
+          status: completed
+        env:
+          HAS_PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+
+      - name: Clean up secrets on runner
+        if: always()
+        run: rm -f android/app/sir-upload.jks android/key.properties

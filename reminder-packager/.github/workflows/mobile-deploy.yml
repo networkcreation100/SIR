@@ -1,0 +1,29 @@
+name: Web build & tests
+
+# Fast sanity check on every push: installs deps, runs the audit/tests, and
+# verifies the production web build + Capacitor sync succeed.
+# The signed store bundle is produced by android-release.yml (manual/tag trigger).
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reminder-packager
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: reminder-packager/package-lock.json
+      - run: npm ci
+      - run: npm run audit:local
+      - run: npm run build
+      - run: npx cap sync android

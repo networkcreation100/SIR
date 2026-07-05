@@ -1,0 +1,37 @@
+// ---------------------------------------------------------------------------
+// SIR — Android release signing
+// Paste the signingConfigs + buildTypes blocks below into
+// android/app/build.gradle inside the `android { ... }` block.
+// Create android/keystore.properties (do NOT commit it) with:
+//   storeFile=../sir-upload-key.jks
+//   storePassword=...
+//   keyAlias=sir-upload
+//   keyPassword=...
+// ---------------------------------------------------------------------------
+
+// Near the top of android/app/build.gradle, above `android {`:
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+// Inside android { ... }:
+signingConfigs {
+    release {
+        if (keystorePropertiesFile.exists()) {
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+        }
+    }
+}
+
+buildTypes {
+    release {
+        signingConfig signingConfigs.release
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
+}
