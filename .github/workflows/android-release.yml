@@ -71,12 +71,29 @@ jobs:
         run: npx cap sync android
 
       - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/sir-upload.jks
-          if [ ! -s android/app/sir-upload.jks ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty."
-            exit 1
-          fi
+          python3 - <<'PY'
+          import base64, os, re, sys
+          raw = os.environ.get('ANDROID_KEYSTORE_BASE64_VALUE', '')
+          clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
+          if not clean:
+              print('::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty.')
+              sys.exit(1)
+          try:
+              data = base64.b64decode(clean, validate=True)
+          except Exception as exc:
+              print(f'::error::ANDROID_KEYSTORE_BASE64 is not valid base64 after cleanup: {exc}')
+              sys.exit(1)
+          os.makedirs('android/app', exist_ok=True)
+          with open('android/app/sir-upload.jks', 'wb') as f:
+              f.write(data)
+          if len(data) < 1000:
+              print('::error::Decoded keystore is unexpectedly small. Please re-copy the full sir-upload.jks.base64.txt value.')
+              sys.exit(1)
+          print(f'Decoded upload keystore ({len(data)} bytes).')
+          PY
 
       - name: Write key.properties
         run: |
