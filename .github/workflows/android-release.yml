@@ -81,10 +81,13 @@ jobs:
           if not clean:
               print('::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty.')
               sys.exit(1)
+          # Windows/Notepad/GitHub copy-paste can drop or alter trailing padding.
+          # Re-pad to the nearest valid base64 length before decoding.
+          clean += '=' * ((4 - len(clean) % 4) % 4)
           try:
-              data = base64.b64decode(clean, validate=True)
+              data = base64.b64decode(clean, validate=False)
           except Exception as exc:
-              print(f'::error::ANDROID_KEYSTORE_BASE64 is not valid base64 after cleanup: {exc}')
+              print(f'::error::ANDROID_KEYSTORE_BASE64 is not valid base64 after cleanup/padding repair: {exc}')
               sys.exit(1)
           os.makedirs('android/app', exist_ok=True)
           with open('android/app/sir-upload.jks', 'wb') as f:
