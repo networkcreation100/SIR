@@ -107,6 +107,21 @@ jobs:
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           EOF
 
+      - name: Validate keystore credentials
+        run: |
+          echo "Verifying keystore alias + password match the provided secrets..."
+          if keytool -list -keystore android/app/sir-upload.jks \
+               -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+               -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /tmp/ksout.txt 2>&1; then
+            echo "✅ Keystore opens with the given store password and alias '${{ secrets.ANDROID_KEY_ALIAS }}'."
+          else
+            echo "::error::Keystore validation FAILED. The ANDROID_KEYSTORE_PASSWORD and/or ANDROID_KEY_ALIAS secret does not match the keystore."
+            echo "----- keytool output -----"
+            cat /tmp/ksout.txt
+            echo "Expected alias per make-keystore.ps1: sir-upload (store password == key password)."
+            exit 1
+          fi
+
       - name: Resolve version fields
         id: ver
         run: |
@@ -126,7 +141,7 @@ jobs:
           ./gradlew bundleRelease \
             -PsirVersionName=${{ steps.ver.outputs.name }} \
             -PsirVersionCode=${{ steps.ver.outputs.code }} \
-            --no-daemon
+            --no-daemon --stacktrace --info 2>&1 | tail -120
 
       - name: Upload AAB as artifact
         uses: actions/upload-artifact@v4
