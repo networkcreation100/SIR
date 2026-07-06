@@ -1,4 +1,4 @@
-package com.networkcreation.reminderpackager;
+package com.sir07042026;
 
 import com.getcapacitor.BridgeActivity;
 

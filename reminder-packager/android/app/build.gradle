@@ -8,10 +8,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "com.networkcreation.reminderpackager"
+    namespace "com.sir07042026"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.networkcreation.reminderpackager"
+        applicationId "com.sir07042026"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode project.hasProperty('sirVersionCode') ? sirVersionCode.toInteger() : 1
