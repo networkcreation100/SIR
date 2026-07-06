@@ -161,6 +161,19 @@ function stripePreviewMiddleware() {
 
 export default defineConfig({
   plugins: [react(), { name: 'sir-stripe-preview-functions', configureServer: stripePreviewMiddleware(), configurePreviewServer: stripePreviewMiddleware() }],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react';
+            if (id.includes('leaflet')) return 'vendor-leaflet';
+            return 'vendor';
+          }
+        }
+      }
+    }
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: true

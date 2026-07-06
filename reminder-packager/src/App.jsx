@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles, buildReminderSnapshotSvg, buildReminderMessageBody, normalizeReminder, urgencyLevels, isCircleGesture } from './reminderEngine.js';
 import './styles.css';
 import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, Music2, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
-import { PrivacyStatementPopup, ContactSupportPopup, PremiumMembershipPopup } from './settingsPopups.jsx';
+const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
+const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
+const PremiumMembershipPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PremiumMembershipPopup })));
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
 
 const placeholderReminderTitle = 'Meeting at the bar';
@@ -2673,9 +2675,11 @@ function App() {
         </div>
       </div>}</div>
     </section>
-    {settingsPopup === 'privacy' && <PrivacyStatementPopup onClose={() => setSettingsPopup(null)} />}
-    {settingsPopup === 'support' && <ContactSupportPopup onClose={() => setSettingsPopup(null)} />}
-    {settingsPopup === 'premium' && <PremiumMembershipPopup onClose={() => setSettingsPopup(null)} />}
+    <React.Suspense fallback={null}>
+      {settingsPopup === 'privacy' && <PrivacyStatementPopup onClose={() => setSettingsPopup(null)} />}
+      {settingsPopup === 'support' && <ContactSupportPopup onClose={() => setSettingsPopup(null)} />}
+      {settingsPopup === 'premium' && <PremiumMembershipPopup onClose={() => setSettingsPopup(null)} />}
+    </React.Suspense>
     <section className={`workspace-grid ${sendOpen ? 'with-send-panel' : ''} ${compactMode ? 'compact-display-mode' : 'standard-display-mode'}`}>
       {!compactMode && <form className="panel composer" onSubmit={e => { e.preventDefault(); sendReminderFromComposer(); }}>
         <div className="composer-title-row"><h2><Bell size={20}/> Create a reminder</h2><button type="button" className={`mic-button ${listening ? 'listening' : ''}`} style={listening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={startVoiceFill} aria-label="Speak to fill reminder"><Mic size={18}/></button></div>
