@@ -38,6 +38,51 @@ function loadLeaflet() {
   return leafletPromise;
 }
 
+/* ---- Two-map view synchronization ----
+   Both the Zoom-Out (role 'out') and Zoom-In (role 'in') maps stay fully
+   interactive. When the user pans/zooms one, we mirror the center to the other
+   and offset its zoom (ZOOM_OFFSET) so 'out' stays wider and 'in' stays closer,
+   while still adjusting dynamically. An `applying` guard prevents feedback loops. */
+function registerSyncMap(bus, role, mapInstance, L) {
+  if (!bus || !mapInstance) return;
+  bus.maps = bus.maps || {};
+  bus.maps[role] = mapInstance;
+  if (typeof bus.ZOOM_OFFSET !== 'number') bus.ZOOM_OFFSET = 4;
+
+  const otherRole = role === 'out' ? 'in' : 'out';
+  const handler = () => {
+    if (bus.applying) return;
+    const other = bus.maps[otherRole];
+    if (!other) return;
+    bus.applying = true;
+    try {
+      const center = mapInstance.getCenter();
+      const zoom = mapInstance.getZoom();
+      // 'in' is closer than 'out' by ZOOM_OFFSET.
+      const targetZoom = otherRole === 'in' ? zoom + bus.ZOOM_OFFSET : zoom - bus.ZOOM_OFFSET;
+      const clamped = Math.max(other.getMinZoom(), Math.min(other.getMaxZoom(), targetZoom));
+      other.setView(center, clamped, { animate: false });
+    } finally {
+      // release on next tick so the mirrored map's own events don't echo back
+      setTimeout(() => { bus.applying = false; }, 0);
+    }
+  };
+  mapInstance.__syncHandler = handler;
+  mapInstance.on('moveend', handler);
+  mapInstance.on('zoomend', handler);
+}
+
+function unregisterSyncMap(bus, role) {
+  if (!bus || !bus.maps) return;
+  const mapInstance = bus.maps[role];
+  if (mapInstance && mapInstance.__syncHandler) {
+    mapInstance.off('moveend', mapInstance.__syncHandler);
+    mapInstance.off('zoomend', mapInstance.__syncHandler);
+    delete mapInstance.__syncHandler;
+  }
+  delete bus.maps[role];
+}
+
 function buildHtmlEmailBody(reminder) {
   const title = escapeHtmlAttribute(reminder.title || 'Reminder');
   const due = escapeHtmlAttribute(formatDue(reminder));
@@ -567,6 +612,18 @@ function bearingBetweenPoints(from, to) {
   return Number.isFinite(degrees) ? (degrees + 360) % 360 : 0;
 }
 
+function metersBetweenPoints(from, to) {
+  if (!from || !to) return Infinity;
+  const R = 6371000;
+  const lat1 = Number(from.lat) * Math.PI / 180;
+  const lat2 = Number(to.lat) * Math.PI / 180;
+  const dLat = lat2 - lat1;
+  const dLng = (Number(to.lng) - Number(from.lng)) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const d = 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  return Number.isFinite(d) ? d : Infinity;
+}
+
 function createCurrentLocationIcon(L, heading = 0) {
   const safeHeading = Number.isFinite(Number(heading)) ? Number(heading) : 0;
   return L.divIcon({
@@ -756,7 +813,7 @@ async function fetchShortestRoute(origin, destination) {
   return lookup.then(route => cloneRoute(route, 'network'));
 }
 
-function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared }) {
+function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared, hideMapIcons = false, syncBus = null, syncRole = 'in', initialZoom = null }) {
   const mapNode = useRef(null);
   const map = useRef(null);
   const addressMarker = useRef(null);
@@ -766,6 +823,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const sharedMarkerLayer = useRef(null);
   const routeLayer = useRef(null);
   const routeRequest = useRef(0);
+  const lastRouteAt = useRef(0);
+  const lastRoutePoint = useRef(null);
   const sharedRouteRequest = useRef(0);
   const lastGpsPoint = useRef(null);
   const sharedLocationSentAt = useRef(0);
@@ -777,6 +836,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const [routeMeta, setRouteMeta] = useState('');
   const [poiCount, setPoiCount] = useState(0);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [locationHelpOpen, setLocationHelpOpen] = useState(false);
+  const [mapToolsOpen, setMapToolsOpen] = useState(false);
   const [resolvedPin, setResolvedPin] = useState(pin || null);
   const fallback = [21.3069, -157.8583];
   const locationSettingsHelp = 'Location is disabled. Phone: open device Settings > Location and allow this app/browser. PC: open browser Site settings > Location > Allow, then tap Refresh.';
@@ -836,12 +897,13 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       if (cancelled || !mapNode.current || map.current) return;
       leaflet.current = L;
       const center = resolvedPin ? [resolvedPin.lat, resolvedPin.lng] : fallback;
-      map.current = L.map(mapNode.current, { zoomControl: false, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true }).setView(center, resolvedPin ? 16 : 11);
+      map.current = L.map(mapNode.current, { zoomControl: false, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true, keyboard: true, minZoom: 3, maxZoom: 19 }).setView(center, initialZoom != null ? initialZoom : (resolvedPin ? 16 : 11));
+      registerSyncMap(syncBus, syncRole, map.current, L);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap',
         maxZoom: 19
       }).addTo(map.current);
-      L.control.zoom({ position: 'bottomright' }).addTo(map.current);
+      // Zoom +/- buttons removed for a cleaner compact map; pinch/scroll still zooms.
       poiLayer.current = L.layerGroup().addTo(map.current);
       sharedRouteLayer.current = L.layerGroup().addTo(map.current);
       sharedMarkerLayer.current = L.layerGroup().addTo(map.current);
@@ -851,6 +913,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     }).catch(() => setStatus('Map could not load. Check the connection and try again.'));
     return () => {
       cancelled = true;
+      unregisterSyncMap(syncBus, syncRole);
       if (watchId.current && navigator.geolocation) navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
       map.current?.remove();
@@ -868,6 +931,14 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       setMapReady(false);
     };
   }, []);
+
+  // Re-register with the sync bus when it becomes available (e.g. edit mode turns on
+  // after the map already mounted), so both maps mirror each other.
+  useEffect(() => {
+    if (!mapReady || !map.current || !leaflet.current) return;
+    registerSyncMap(syncBus, syncRole, map.current, leaflet.current);
+    return () => unregisterSyncMap(syncBus, syncRole);
+  }, [syncBus, syncRole, mapReady]);
 
   useEffect(() => {
     const L = leaflet.current;
@@ -888,7 +959,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       });
     }
     addressMarker.current.bindTooltip(onPinLocation ? 'Drag pin to move destination' : 'Pinned destination', { permanent: false });
-    map.current.setView(latLng, 16);
+    map.current.panTo(latLng, { animate: true, duration: 0.25 });
     setTimeout(() => map.current?.invalidateSize(), 100);
   }, [resolvedPin, mapReady, onPinLocation]);
 
@@ -961,7 +1032,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       marker.bindTooltip(`${getInitials(person.name)} · ${person.name || 'Shared user'}`, { permanent: false });
     });
     if (!routeMeta && !isTrackingLocation) setStatus(`${people.length} shared locations · finding smart routes…`);
-    map.current.fitBounds(L.latLngBounds(boundsPoints), { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.2 });
+    fitOrLock(boundsPoints, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.2 });
 
     Promise.all(people.map(async (person, index) => {
       const origin = { lat: Number(person.lat), lng: Number(person.lng) };
@@ -994,7 +1065,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       if (!routeMeta && !isTrackingLocation) {
         setStatus(fallbackCount ? `${people.length - fallbackCount} smart routes · ${fallbackCount} direct fallback${fallbackCount > 1 ? 's' : ''}` : `${people.length} shared locations · smart routes`);
       }
-      map.current.fitBounds(L.latLngBounds(routeBounds), { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.22 });
+      fitOrLock(routeBounds, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.22 });
     });
     return () => { cancelled = true; };
   }, [sharedLocations, resolvedPin, mapReady, routeMeta, isTrackingLocation]);
@@ -1004,6 +1075,14 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     document.body.classList.toggle('sir-map-expanded', mapExpanded);
     return () => document.body.classList.remove('sir-map-expanded');
   }, [mapExpanded]);
+
+  function fitOrLock(latLngsOrBounds, options = { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.2 }) {
+    const L = leaflet.current;
+    if (!L || !map.current) return;
+    const bounds = latLngsOrBounds instanceof L.LatLngBounds ? latLngsOrBounds : L.latLngBounds(latLngsOrBounds);
+    // Auto-adjust the view to fit the route/points. Sync will mirror to the paired map.
+    map.current.fitBounds(bounds, options);
+  }
 
   async function drawSmartRoute(userLatLng) {
     const L = leaflet.current;
@@ -1025,7 +1104,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       lineCap: 'round',
       interactive: false
     }).addTo(map.current);
-    map.current.fitBounds(L.latLngBounds(directCoordinates), { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.18 });
+    fitOrLock(directCoordinates, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.18 });
     setRouteMeta('Route ready · optimizing smart route…');
     setStatus('My location enabled · route ready');
 
@@ -1042,7 +1121,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
         interactive: false
       }).addTo(map.current);
       const bounds = L.latLngBounds([...route.coordinates, userLatLng, [destination.lat, destination.lng]]);
-      map.current.fitBounds(bounds, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.22 });
+      fitOrLock(bounds, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.22 });
       const distanceLabel = formatRouteDistance(route.distance);
       const durationLabel = formatRouteDuration(route.duration);
       const summary = `Smart route · ${distanceLabel}${durationLabel ? ` · ${durationLabel}` : ''}`;
@@ -1079,13 +1158,25 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     }
     gpsMarker.current.bindTooltip(`My location · heading ${Math.round(heading)}°`, { permanent: false });
     setStatus(`My location refreshed · heading ${Math.round(heading)}° · ±${Math.round(position.coords.accuracy || 0)}m`);
-    drawSmartRoute(latLng);
+    // Stabilize the route: only recompute when the user has moved a meaningful
+    // distance (>25m) or enough time has passed (>12s). Prevents path jitter on
+    // every GPS tick while the marker itself still follows smoothly.
+    const now2 = Date.now();
+    const movedFar = metersBetweenPoints(lastRoutePoint.current, currentPoint) > 25;
+    const staleEnough = now2 - lastRouteAt.current > 12000;
+    if (!lastRoutePoint.current || movedFar || staleEnough) {
+      lastRoutePoint.current = currentPoint;
+      lastRouteAt.current = now2;
+      drawSmartRoute(latLng);
+    }
   }
 
-  function handleGpsUnavailable() {
+  function handleGpsUnavailable(error) {
     watchId.current = null;
     setIsTrackingLocation(false);
     setStatus(locationSettingsHelp);
+    // Permission denied / position unavailable -> guide the user to Settings.
+    if (!error || error.code === 1 || error.code === 2) setLocationHelpOpen(true);
   }
 
   function startGpsWatch() {
@@ -1102,6 +1193,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     gpsMarker.current = null;
     routeLayer.current = null;
     lastGpsPoint.current = null;
+    lastRoutePoint.current = null;
+    lastRouteAt.current = 0;
     setRouteMeta('');
     setIsTrackingLocation(false);
     setStatus('Location sharing stopped. Tap Share my location or Refresh to reconnect.');
@@ -1135,7 +1228,10 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   }
 
   function trackGps() {
-    if (watchId.current) {
+    // Toggle: first tap turns location sharing ON, a second tap turns it OFF.
+    // Use the visible tracking state (flips immediately) plus watchId so a
+    // quick second tap during the permission prompt still deactivates cleanly.
+    if (isTrackingLocation || watchId.current) {
       stopGpsTracking();
       return;
     }
@@ -1148,28 +1244,68 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       return;
     }
     setStatus('Enabling my location…');
+    // Proactively check permission state so we can prompt for Settings if it's off.
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then(result => {
+        if (result.state === 'denied') {
+          setIsTrackingLocation(false);
+          setStatus(locationSettingsHelp);
+          setLocationHelpOpen(true);
+          return;
+        }
+        setIsTrackingLocation(true);
+        startGpsWatch();
+      }).catch(() => { setIsTrackingLocation(true); startGpsWatch(); });
+      return;
+    }
     setIsTrackingLocation(true);
     startGpsWatch();
   }
 
-  return <div className={`preview-live-map ${mapExpanded ? 'expanded' : ''}`} aria-label="Live reminder map">
-    <div className="preview-map-shell">
+  // Once location sharing is enabled, drop the "No location set" hint and show
+  // the live status/route instead (label auto-hides if there is nothing to say).
+  const overlayLabel = isTrackingLocation
+    ? (routeMeta || status || 'Sharing your live location…')
+    : (isLocationUnset(location) ? 'No location set' : (onPinLocation && resolvedPin ? 'Drag the pin or tap the map to move it' : (routeMeta || status)));
+  const showOverlayLabel = !!(overlayLabel && overlayLabel.trim());
+  return <div className={`preview-live-map ${mapExpanded ? 'expanded' : ''} ${hideMapIcons ? 'hide-map-icons' : ''}`} aria-label="Live reminder map">
+    {locationHelpOpen && <div className="settings-modal-backdrop location-help-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setLocationHelpOpen(false); }}>
+      <section className="settings-modal location-help-modal" role="dialog" aria-modal="true" aria-label="Turn on location services">
+        <button type="button" className="settings-modal-close" onClick={() => setLocationHelpOpen(false)} aria-label="Close">×</button>
+        <div className="location-help-icon"><MapPin size={26}/></div>
+        <h2>Turn on location services</h2>
+        <p>Location access is currently turned off, so we can’t share your live location.</p>
+        <ul>
+          <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → Location Services → turn on, then allow SIR.</li>
+          <li><strong>Android:</strong> Settings → Location → turn on, then allow SIR.</li>
+          <li><strong>Browser:</strong> Site settings → Location → Allow, then reload.</li>
+        </ul>
+        <button type="button" className="primary location-help-done" onClick={() => setLocationHelpOpen(false)}>Got it</button>
+      </section>
+    </div>}
+    <div className={`preview-map-shell ${mapToolsOpen ? 'tools-open' : ''}`}>
       <div className="preview-map-canvas" ref={mapNode} />
-      <button type="button" className="preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
-        {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}<span>{mapExpanded ? 'Minimize' : 'Expand'}</span>
+      {showOverlayLabel && <div className={`preview-map-label-overlay ${mapToolsOpen ? 'shifted' : ''}`} aria-live="polite"><MapPin size={13}/> <span>{overlayLabel}{poiCount > 0 && !routeMeta ? ` · ${poiCount} nearby places` : ''}</span></div>}
+      {/* Centered Location Tools toggle — expands the tools directly on the map */}
+      <button type="button" className={`preview-map-tools-toggle ${mapToolsOpen ? 'active' : ''}`} onClick={() => setMapToolsOpen(open => !open)} aria-pressed={mapToolsOpen} aria-label={mapToolsOpen ? 'Hide location tools' : 'Location tools'} title={mapToolsOpen ? 'Hide location tools' : 'Location tools'}>
+        <Settings2 size={16}/>
       </button>
-    </div>
-    <div className="preview-map-bar">
-      <span><MapPin size={13}/> {onPinLocation && resolvedPin ? 'Drag the pin or tap the map to move it' : (routeMeta || status)}{poiCount > 0 && !routeMeta ? ` · ${poiCount} nearby places` : ''}</span>
-      <div className="preview-map-actions">
-        {mapExpanded && <button type="button" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
-        <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={13} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
-      </div>
+      {mapToolsOpen && <div className="preview-map-tools-bar" role="group" aria-label="Location tools">
+        <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
+        <button type="button" className="preview-map-tool-btn" onClick={refreshLiveRoute}><RefreshCw size={14}/> Recenter</button>
+      </div>}
+      <button type="button" className="preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
+        {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+      </button>
+      {!mapToolsOpen && <div className="preview-map-share-overlay">
+        {mapExpanded && <button type="button" className="preview-map-refresh" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
+        <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
+      </div>}
     </div>
   </div>;
 }
 
-function LocationMap({ pin, onSelect }) {
+function LocationMap({ pin, onSelect, syncBus = null, syncRole = 'out', initialZoom = 13 }) {
   const mapNode = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
@@ -1187,9 +1323,10 @@ function LocationMap({ pin, onSelect }) {
       if (cancelled || !mapNode.current || map.current) return;
       leaflet.current = L;
       const center = pin ? [pin.lat, pin.lng] : fallback;
-      map.current = L.map(mapNode.current, { zoomControl: true }).setView(center, pin ? 16 : 11);
+      map.current = L.map(mapNode.current, { zoomControl: false, attributionControl: false, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true, doubleClickZoom: true, boxZoom: true, keyboard: true, minZoom: 3, maxZoom: 19 }).setView(center, initialZoom);
+      registerSyncMap(syncBus, syncRole, map.current, L);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
+        attribution: '',
         maxZoom: 19
       }).addTo(map.current);
       map.current.on('click', event => onSelectRef.current?.(event.latlng.lat, event.latlng.lng));
@@ -1198,12 +1335,19 @@ function LocationMap({ pin, onSelect }) {
     });
     return () => {
       cancelled = true;
+      unregisterSyncMap(syncBus, syncRole);
       map.current?.remove();
       map.current = null;
       marker.current = null;
       setMapReady(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapReady || !map.current || !leaflet.current) return;
+    registerSyncMap(syncBus, syncRole, map.current, leaflet.current);
+    return () => unregisterSyncMap(syncBus, syncRole);
+  }, [syncBus, syncRole, mapReady]);
 
   useEffect(() => {
     const L = leaflet.current;
@@ -1214,7 +1358,7 @@ function LocationMap({ pin, onSelect }) {
     } else {
       marker.current.setLatLng(latLng);
     }
-    map.current.setView(latLng, 16);
+    map.current.panTo(latLng, { animate: true, duration: 0.25 });
     setTimeout(() => map.current?.invalidateSize(), 80);
   }, [pin, mapReady]);
 
@@ -1253,10 +1397,12 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '' }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
+  // Shared bus so the Zoom-Out and Zoom-In maps stay synchronized while both remain interactive.
+  const mapSync = useRef({ maps: {}, applying: false, ZOOM_OFFSET: 4 });
   const drawing = useRef([]);
   const status = getStatus(reminder);
   const urgencyKey = reminder.urgency || 'low';
@@ -1287,31 +1433,46 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     drawing.current = [];
   }
 
-  return <article className="reminder-card simplified-preview" style={{ '--accent': accent, '--schedule-border': scheduleBorder }}>
+  return <article className={`reminder-card simplified-preview ${editMode && locationToolsOpen ? 'loctools-active' : ''}`} style={{ '--accent': accent, '--schedule-border': scheduleBorder }}>
+    {editMode && locationToolsOpen && !recipientMode && <div className="preview-loctools-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onToggleLocationTools?.(); }}>
+      <div className="preview-loctools-sheet" role="dialog" aria-modal="true" aria-label="Location tools">
+        <div className="preview-loctools-head"><strong>Location tools</strong><button type="button" className="preview-loctools-close" aria-label="Close location tools" onClick={() => onToggleLocationTools?.()}><X size={16}/></button></div>
+        <div className="preview-loctools-actions">
+          {onPinLocation && <button type="button" onClick={() => { setPreviewPinPickerOpen(true); onToggleLocationTools?.(); }}><MapPin size={16}/> Drop pin on map</button>}
+          {onUseMyLocation && <button type="button" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
+          {onClearLocation && <button type="button" onClick={() => { onClearLocation(); }}>Clear location</button>}
+        </div>
+        {locationStatus && <p className="preview-loctools-status">{locationStatus}</p>}
+      </div>
+    </div>}
     <div className="preview-card-toolbar">
       {!recipientMode && onDelete && <button type="button" className="ghost preview-delete-card" aria-label="Delete preview reminder" title="Delete preview reminder" onClick={onDelete}><X size={17}/></button>}
       <button className={`ghost top-action icon-only ${expanded ? 'expanded' : 'collapsed'}`} aria-label={expanded ? 'Minimize preview' : 'Expand preview'} title={expanded ? 'Minimize preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}><ChevronDown size={18}/></button>
     </div>
     {compactMode && onCompactVoice && <button type="button" className={`mic-button preview-card-centered-mic ${compactVoiceListening ? 'listening' : ''}`} style={compactVoiceListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={onCompactVoice} aria-label="Speak to fill reminder"><Mic size={18}/></button>}
     {ring && <div className="magic-ring"><Sparkles size={22}/><span>Ready to send</span></div>}
-    {!recipientMode && <div className={`preview-heading-row ${compactMode ? 'compact-mode-heading-row' : ''}`}><h2 className="preview-heading">Preview reminder</h2>{compactMode && <p className="compact-standard-mode-hint">Switch to Standard mode for manual entry</p>}</div>}
+    {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${compactVoiceTranscript ? 'has-transcript' : ''}`} role="status" aria-live="polite">
       <span className="voice-star-wrap"><Sparkles size={15}/></span>
       <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || 'Speak to automatically display the date, time, and location.')}</span>
     </div> : <h3 className="preview-title">{reminder.title}</h3>}
     <div className={`due ${status.tone}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
+    {editMode && !recipientMode && <div className="preview-edit-schedule">
+      <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
+      <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
+    </div>}
+    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && !recipientMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
     {recipientMode && sharedSummary && <div className="shared-change-summary"><CheckCircle2 size={15}/><span>{sharedSummary}{sharedMeta && <em>Changed by {formatEditorName(sharedMeta.editor)} · {formatChangeTimestamp(sharedMeta.at)}</em>}</span></div>}
     {expanded && <div className="preview-summary">
-      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} title={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/></button> : <MapPin size={15}/>} <span>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p>{noLocationSet && !recipientMode && <label className="preview-timezone-select"><span>Time Zone</span><select value={previewTimezone} onChange={event => onPreviewTimezoneChange?.(event.target.value)} aria-label="Preview reminder time zone">{TIMEZONE_OPTIONS.map(option => <option key={option.code} value={option.code}>{option.label}</option>)}</select></label>}</div>
-      {compactMode && previewPinPickerOpen && onPinLocation && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation(lat, lng)} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} />}
+      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} title={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
+      {compactMode && previewPinPickerOpen && onPinLocation && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${editMode ? 'zoom-in-view' : ''}`}>{editMode && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode} syncBus={editMode ? mapSync.current : null} syncRole="in" initialZoom={editMode ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
         {onToggleRecipients && <button type="button" className="ghost recipient-visibility" onClick={onToggleRecipients}>Hide</button>}
       </div>}
     </div>}
-    <div className="inline-actions"><button onClick={onEdit}>Edit schedule & location</button></div>
     {compactMode && !recipientMode ? <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div> : <p className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><span>Edit the schedule, location, or location tracking on this device.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</p>}
   </article>;
 }
@@ -1635,14 +1796,30 @@ function parseVoiceDate(text, baseDate = new Date()) {
 }
 
 function parseVoiceTime(text) {
-  const match = text.match(/\b(?:at|around)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
-  if (!match) return '';
-  let hour = Number(match[1]);
-  const minute = match[2] || '00';
-  const meridiem = match[3].toLowerCase();
-  if (meridiem === 'pm' && hour < 12) hour += 12;
-  if (meridiem === 'am' && hour === 12) hour = 0;
-  return `${String(hour).padStart(2, '0')}:${minute}`;
+  // Speech engines return meridiem in many forms: "am", "a.m.", "a. m.", "AM", "pm", "p.m.".
+  // Accept optional dots/spaces between and after the letters, and allow "o'clock".
+  let match = text.match(/\b(?:at|around)?\s*(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\.?/i);
+  if (match) {
+    let hour = Number(match[1]);
+    const minute = match[2] || '00';
+    const meridiem = match[3].toLowerCase();
+    if (meridiem === 'p' && hour < 12) hour += 12;
+    if (meridiem === 'a' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${minute}`;
+  }
+  // "8 o'clock" / "8 oclock" (assume the spoken hour as-is, 24h if >12).
+  match = text.match(/\b(?:at|around)?\s*(\d{1,2})(?::(\d{2}))?\s*o['\u2019]?\s*clock\b/i);
+  if (match) {
+    const hour = Number(match[1]);
+    const minute = match[2] || '00';
+    return `${String(hour).padStart(2, '0')}:${minute}`;
+  }
+  // Bare "at 8:30" with no meridiem — take it literally.
+  match = text.match(/\bat\s+(\d{1,2}):(\d{2})\b/i);
+  if (match) {
+    return `${String(Number(match[1])).padStart(2, '0')}:${match[2]}`;
+  }
+  return '';
 }
 
 const US_STATE_NAMES = ['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming','district of columbia'];
@@ -1660,7 +1837,7 @@ function parseVoiceLocation(text) {
     .replace(/[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/gi, ' ')
     .replace(/\+?\d[\d\s().-]{5,}\d/g, ' ')
     .replace(/\b(remind me to|remind me|create a reminder to|create a reminder|schedule|meeting|meet|appointment|call|lunch|dinner|coffee)\b/gi, ' ')
-    .replace(/\b(?:at|around)?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, ' ')
+    .replace(/\b(?:at|around)?\s*\d{1,2}(?::\d{2})?\s*[ap]\.?\s*m\.?/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -2024,6 +2201,8 @@ function App() {
   const [addressMicVisible, setAddressMicVisible] = useState(false);
   const [voiceRecipientText, setVoiceRecipientText] = useState('');
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+  const [previewEditOpen, setPreviewEditOpen] = useState(false);
+  const [previewLocationToolsOpen, setPreviewLocationToolsOpen] = useState(false);
   const [settingsPopup, setSettingsPopup] = useState(null);
   const [musicOn, setMusicOn] = useState(false);
   const [musicStatus, setMusicStatus] = useState('Background music off.');
@@ -2562,7 +2741,7 @@ function App() {
         locationPin: { lat, lng, accuracy: Math.round(accuracy || 0), address }
       };
     });
-    setLocationStatus(applied ? `Pinned: ${address}` : 'Spoken location kept · map follows the entered destination.');
+    setLocationStatus(applied ? `Pinned: ${address}` : '');
   }
   function useCurrentLocation(options = {}) {
     setLocationStatus('Requesting location…');
@@ -2753,7 +2932,7 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setDisplayMode('standard'); setForm(previewReminder); window.setTimeout(() => fieldRefs.current[0]?.focus(), 60); } else { setDisplayMode('compact'); } }} onForward={() => setSendOpen(true)} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setForm(previewReminder); setPreviewEditOpen(open => !open); } else { setDisplayMode('compact'); } }} onForward={() => setSendOpen(true)} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} />
         </div>
       </section>
       {sendOpen && <RecipientPanel reminder={activeReminder} onClose={() => setSendOpen(false)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />}

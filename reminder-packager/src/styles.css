@@ -826,3 +826,334 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
   /* Ensure gradient text edges render sharp */
   .brand-sir,.brand-words,.eyebrow{-webkit-font-smoothing:antialiased}
 }
+
+/* ============================================================
+   COMPACT PREVIEW HEADER — centered, two-row layout
+   Row 1: "Preview reminder" (orange eyebrow)
+   Row 2: "Switch to Standard mode for manual entry" (subtitle)
+   Overrides the earlier side-by-side (space-between) layout.
+   ============================================================ */
+.compact-mode-heading-row{
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  gap:4px!important;
+}
+.compact-mode-heading-row .preview-heading{
+  text-align:center!important;
+  justify-content:center!important;
+  margin:0!important;
+}
+.compact-mode-heading-row .compact-standard-mode-hint{
+  text-align:center!important;
+  max-width:none!important;
+  white-space:normal!important;
+  margin:0!important;
+}
+
+/* ============================================================
+   COMPACT MAP OVERLAYS — put labels ON the map, trim chrome
+   - "No location set" / status pinned to top-left of the map
+   - "Share my location" pinned to the bottom of the map
+   - Leaflet zoom +/- removed in JS; attribution hidden here
+   - Redundant location text row hidden in compact mode
+   ============================================================ */
+.preview-map-shell{position:relative}
+
+/* Top-left status label overlaid on the map */
+.preview-map-label-overlay{
+  position:absolute;top:8px;left:8px;z-index:600;
+  display:inline-flex;align-items:center;gap:5px;
+  /* Leave room for the centered tools toggle AND the top-right expand icon */
+  max-width:calc(50% - 34px);
+  padding:5px 9px;border-radius:10px;
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(4px);
+  box-shadow:0 1px 4px rgba(15,23,42,.14);
+  font-size:11px;font-weight:800;color:#1f2937;line-height:1.2;
+}
+/* When the on-map tools bar is open, drop the label below it so nothing overlaps */
+.preview-map-label-overlay.shifted{top:52px}
+.preview-map-label-overlay svg{flex-shrink:0;color:#f97316}
+.preview-map-label-overlay span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Share button overlaid at the bottom of the map */
+.preview-map-share-overlay{
+  position:absolute;left:8px;right:8px;bottom:8px;z-index:600;
+  display:flex;gap:8px;justify-content:center;align-items:center;
+  pointer-events:none;
+}
+.preview-map-share-overlay > *{pointer-events:auto}
+.preview-map-share-overlay .share-location-button{
+  backdrop-filter:blur(4px);
+  box-shadow:0 1px 6px rgba(15,23,42,.18);
+}
+/* Inactive = glassy white pill so it reads on the map */
+.preview-map-share-overlay .share-location-button.inactive{
+  background:rgba(255,255,255,.94);color:#2563eb;border-color:rgba(37,99,235,.5);
+}
+/* Active (Stop sharing) = solid blue so the white icon + text stay visible */
+.preview-map-share-overlay .share-location-button.active{
+  background:#2563eb!important;color:#fff!important;border-color:#2563eb!important;
+}
+.preview-map-share-overlay .share-location-button.active svg{stroke:#fff;color:#fff}
+.preview-map-refresh{
+  background:rgba(255,255,255,.94);backdrop-filter:blur(4px);
+  box-shadow:0 1px 6px rgba(15,23,42,.18);
+}
+
+/* Hide the Leaflet attribution (Leaflet | © OpenStreetMap) for a clean look */
+.preview-map-shell .leaflet-control-attribution{display:none!important}
+/* Also hide any lingering zoom control just in case a build re-adds it */
+.preview-map-shell .leaflet-control-zoom{display:none!important}
+
+/* The old below-map bar is no longer rendered; ensure no empty gap */
+.preview-live-map .preview-map-bar{display:none!important}
+
+/* Hide the redundant "No location set" text row in compact mode
+   (it now lives on the map) but keep the pin button + Time Zone */
+.preview-location-timezone-row p .preview-location-text-compact{display:none!important}
+/* If the row's only visible content was that text + a lone pin icon,
+   collapse the extra vertical space */
+.compact-preview .preview-location-timezone-row{margin-bottom:6px}
+
+/* ============================================================
+   TIME ZONE relocated directly beneath the calendar line.
+   Only rendered when there is NO location (online-meeting case);
+   auto-hidden once a location/pin is set (map/location active).
+   ============================================================ */
+.preview-timezone-under-calendar{
+  display:inline-flex;align-items:center;gap:8px;
+  margin:8px 0 4px;padding:6px 12px;
+  border:1px solid #e2e8f0;border-radius:999px;
+  background:#f8fafc;width:fit-content;
+  font-size:12px;font-weight:800;color:#475569;
+}
+.preview-timezone-under-calendar span{white-space:nowrap}
+.preview-timezone-under-calendar select{
+  border:none;background:transparent;font:inherit;font-weight:800;
+  color:#1f2937;cursor:pointer;padding:0 2px;
+}
+@media(prefers-color-scheme:dark) and (min-width:99999px){
+  .preview-timezone-under-calendar{background:#1e293b;border-color:#334155;color:#94a3b8}
+  .preview-timezone-under-calendar select{color:#f1f5f9}
+}
+
+/* ============================================================
+   "Edit schedule & location" moved into the old Time Zone slot
+   (directly beneath the calendar) and centered horizontally.
+   Time Zone box is fully removed from the JSX.
+   ============================================================ */
+.inline-actions-under-calendar{
+  display:flex;justify-content:center;align-items:center;
+  margin:10px 0 4px;
+}
+.inline-actions-under-calendar button{
+  margin:0 auto;
+}
+
+/* ============================================================
+   LOCATION-SERVICES help popup — shown when the user taps
+   "Share my location" but access is denied/off.
+   ============================================================ */
+.location-help-modal{
+  max-width:340px;width:calc(100% - 40px);
+  padding:22px 20px 20px;text-align:center;position:relative;
+  border-radius:18px;
+}
+.location-help-modal .settings-modal-close{
+  position:absolute;top:10px;right:12px;border:none;background:transparent;
+  font-size:22px;line-height:1;color:#94a3b8;cursor:pointer;
+}
+.location-help-icon{
+  width:52px;height:52px;margin:2px auto 12px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(37,99,235,.1);color:#2563eb;
+}
+.location-help-modal h2{margin:0 0 8px;font-size:17px;font-weight:900;color:#0f172a}
+.location-help-modal p{margin:0 0 12px;font-size:13px;color:#475569;line-height:1.4}
+.location-help-modal ul{
+  margin:0 0 16px;padding:0;list-style:none;text-align:left;
+  display:grid;gap:8px;
+}
+.location-help-modal li{
+  font-size:12.5px;color:#334155;line-height:1.4;
+  background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:8px 10px;
+}
+.location-help-modal li strong{color:#0f172a}
+.location-help-done{width:100%;justify-content:center}
+
+/* ============================================================
+   MOBILE inline edit inside the Preview Reminder card:
+   editable date/time + a location-tools popup sheet.
+   ============================================================ */
+.preview-edit-schedule{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 2px;
+}
+.preview-edit-schedule label{display:grid;gap:4px}
+.preview-edit-schedule label span{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.preview-edit-schedule input{
+  width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:10px;
+  font:inherit;font-weight:700;color:#0f172a;background:#fff;
+}
+.preview-edit-schedule input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+
+.inline-actions-under-calendar .preview-edit-done{background:#16a34a;border-color:#16a34a;color:#fff}
+.preview-location-tools-trigger{margin-left:8px}
+
+/* Location-tools popup sheet, anchored inside the preview card */
+.preview-loctools-backdrop{
+  position:absolute;inset:0;z-index:40;
+  background:rgba(15,23,42,.35);backdrop-filter:blur(2px);
+  display:flex;align-items:flex-end;justify-content:center;
+  border-radius:inherit;padding:10px;
+}
+.preview-loctools-sheet{
+  width:100%;max-width:420px;background:#fff;border-radius:16px;
+  box-shadow:0 12px 40px rgba(15,23,42,.28);padding:14px;
+  animation:loctools-rise .18s ease-out;
+}
+@keyframes loctools-rise{from{transform:translateY(14px);opacity:.4}to{transform:translateY(0);opacity:1}}
+.preview-loctools-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.preview-loctools-head strong{font-size:14px;font-weight:900;color:#0f172a}
+.preview-loctools-close{border:none;background:transparent;color:#94a3b8;cursor:pointer;padding:2px}
+.preview-loctools-actions{display:grid;gap:8px}
+.preview-loctools-actions button{
+  display:flex;align-items:center;gap:8px;width:100%;justify-content:flex-start;
+  padding:11px 12px;border:1px solid #e2e8f0;border-radius:11px;
+  background:#f8fafc;font:inherit;font-weight:800;font-size:13px;color:#1f2937;cursor:pointer;
+}
+.preview-loctools-actions button:hover{background:#eef2f7;border-color:#cbd5e1}
+.preview-loctools-status{margin:10px 2px 0;font-size:12px;color:#475569;line-height:1.4}
+
+/* The preview card needs relative positioning so the sheet overlays it */
+.reminder-card.simplified-preview{position:relative}
+
+/* ============================================================
+   ON-MAP LOCATION TOOLS: centered toggle icon + inline tools bar
+   ============================================================ */
+.preview-map-tools-toggle{
+  position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:650;
+  width:38px;height:38px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid rgba(226,232,240,.9);background:rgba(255,255,255,.96);
+  color:#0f172a;box-shadow:0 6px 16px rgba(15,23,42,.18);cursor:pointer;
+  transition:transform .16s ease,box-shadow .16s ease,background .16s ease,color .16s ease;
+}
+.preview-map-tools-toggle:hover{transform:translateX(-50%) translateY(-1px);box-shadow:0 10px 22px rgba(15,23,42,.22)}
+.preview-map-tools-toggle.active{background:#2563eb;color:#fff;border-color:#2563eb}
+
+.preview-map-tools-bar{
+  position:absolute;top:52px;left:8px;right:8px;z-index:640;
+  display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;
+}
+.preview-map-tool-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 14px;border-radius:999px;font:inherit;font-weight:800;font-size:12px;
+  border:1px solid rgba(37,99,235,.5);background:rgba(255,255,255,.96);color:#2563eb;
+  box-shadow:0 4px 12px rgba(15,23,42,.16);backdrop-filter:blur(4px);cursor:pointer;
+}
+.preview-map-tool-btn:hover{background:#eff4ff}
+
+/* ============================================================
+   Equal sizing for Share / Stop location buttons (identical box)
+   ============================================================ */
+.share-location-button{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-height:40px;padding:9px 16px;border-radius:999px;
+  font:inherit;font-weight:800;font-size:12.5px;line-height:1;
+  border:1px solid transparent;cursor:pointer;box-sizing:border-box;
+}
+.share-location-button svg{flex:0 0 auto;width:14px;height:14px}
+
+/* Expand/Minimize is now icon-only — make it a compact round button */
+.preview-map-expand{
+  width:38px;height:38px;padding:0!important;gap:0!important;
+  justify-content:center!important;border-radius:999px!important;
+}
+.preview-map-expand span{display:none!important}
+
+/* ============================================================
+   When the Location Tools popup is open, hide every other on-map
+   icon/control so ONLY the location tools are shown.
+   ============================================================ */
+.reminder-card.simplified-preview.loctools-active .preview-map-tools-toggle,
+.reminder-card.simplified-preview.loctools-active .preview-map-tools-bar,
+.reminder-card.simplified-preview.loctools-active .preview-map-expand,
+.reminder-card.simplified-preview.loctools-active .preview-map-share-overlay,
+.reminder-card.simplified-preview.loctools-active .preview-map-label-overlay{
+  display:none !important;
+}
+/* Make the tools backdrop cover the entire card, above the map */
+.reminder-card.simplified-preview.loctools-active .preview-loctools-backdrop{
+  z-index:1200;
+}
+
+/* ============================================================
+   Edit-screen map view labels + hidden controls
+   ============================================================ */
+/* Consistent view-label style for BOTH maps (Zoom-Out View / Zoom-In View) */
+.map-view-label{
+  display:block;box-sizing:border-box;width:100%;
+  margin:0 0 8px;padding:0 4px;
+  font-size:12px;font-weight:900;letter-spacing:.02em;line-height:1.2;
+  color:#0f172a;text-align:center;text-transform:none;
+}
+/* Give the pin-picker card inner padding so its label isn't clipped at the edge,
+   and match the spacing/rhythm of the live-map wrap below it. */
+.preview-pin-picker.map-card{padding:12px}
+.preview-pin-picker.map-card > .leaflet-map,
+.preview-pin-picker.map-card .leaflet-map{border-radius:12px;overflow:hidden}
+.preview-live-map-wrap{margin:0 0 12px}
+.preview-live-map-wrap.zoom-in-view{margin-top:6px}
+
+/* Pin-picker (Zoom-Out View): hide leaflet zoom buttons + attribution defensively */
+.preview-pin-picker .leaflet-control-zoom,
+.preview-pin-picker .leaflet-control-attribution{display:none !important}
+
+/* Zoom-In View map: hide ALL on-map icons/controls */
+.preview-live-map.hide-map-icons .preview-map-tools-toggle,
+.preview-live-map.hide-map-icons .preview-map-tools-bar,
+.preview-live-map.hide-map-icons .preview-map-expand,
+.preview-live-map.hide-map-icons .preview-map-share-overlay,
+.preview-live-map.hide-map-icons .preview-map-label-overlay,
+.preview-live-map.hide-map-icons .leaflet-control-zoom,
+.preview-live-map.hide-map-icons .leaflet-control-attribution{display:none !important}
+
+/* ============================================================
+   Mobile compact preview: maximize display width + elevated
+   full-screen card treatment.
+   ============================================================ */
+@media(max-width:900px){
+  /* Let the preview stack span the full viewport width */
+  .workspace-grid.compact-display-mode .preview-stack{
+    width:100% !important;
+    max-width:100% !important;
+    padding-left:6px !important;
+    padding-right:6px !important;
+    padding-top:52px;
+  }
+  /* Card uses nearly the whole width — thin, even side margins */
+  .compact-display-mode .preview-card-motion{ width:100% !important; }
+  .compact-display-mode .reminder-card{
+    width:100% !important;
+    max-width:100% !important;
+    /* elevated full-screen feel */
+    border-radius:22px;
+    padding:22px 16px;
+    box-shadow:0 24px 60px rgba(15,23,42,.28), 0 4px 14px rgba(15,23,42,.10);
+  }
+  .compact-display-mode .stack-shadow{ width:96% !important; }
+  /* voice panel + send row also widen to match */
+  .compact-display-mode .compact-preview-voice-panel{ width:100% !important; padding:0 6px; }
+  /* bigger, more immersive map in the elevated view */
+  .compact-display-mode .preview-map-canvas{ height:240px; min-height:240px; }
+}
+@media(max-width:520px){
+  .workspace-grid.compact-display-mode .preview-stack{
+    padding-left:4px !important;
+    padding-right:4px !important;
+  }
+  .compact-display-mode .reminder-card{ padding:20px 13px; }
+}
