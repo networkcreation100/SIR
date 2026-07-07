@@ -6,6 +6,7 @@ const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').th
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
 const PremiumMembershipPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PremiumMembershipPopup })));
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
+import { startNativeSpeech } from './nativeSpeech.js';
 
 const placeholderReminderTitle = 'Meeting at the bar';
 const REMINDER_SYNC_URL = 'https://superagent-934909c8.base44.app/functions/reminderSync';
@@ -1877,7 +1878,16 @@ function RecipientPanel({ reminder, onClose, onRecipientsChange, showRecipientsI
     setRecipientNotice(`Voice captured: “${transcript}”. Say a phone number, an email address, or ask to search contacts.`);
   }
 
-  function startRecipientVoiceSearch() {
+  async function startRecipientVoiceSearch() {
+    const nativeCtrl = await startNativeSpeech({
+      lang: navigator.language || 'en-US',
+      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Listening for contact name, phone, or email…'); },
+      onPartial: (t) => { if (t) { setRecipientVoiceText(t); setRecipientNotice(`Heard: \u201c${t}\u201d`); } },
+      onFinal: (t) => { if (t) applyRecipientVoiceTranscript(t); },
+      onError: (m) => setRecipientNotice(m),
+      onEnd: () => window.setTimeout(() => setRecipientListening(false), 500),
+    });
+    if (nativeCtrl) return;
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       setRecipientNotice('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
@@ -2374,7 +2384,17 @@ function App() {
     setMusicStatus('Background music paused while microphone is active.');
   }
 
-  function startVoiceFill() {
+  async function startVoiceFill() {
+    // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
+    const nativeCtrl = await startNativeSpeech({
+      lang: navigator.language || 'en-US',
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Listening…'); },
+      onPartial: (t) => { if (t) setVoiceTranscript(t); },
+      onFinal: (t) => { if (t) applyVoiceTranscript(t); },
+      onError: (m) => setVoiceStatus(m),
+      onEnd: () => window.setTimeout(() => setListening(false), 500),
+    });
+    if (nativeCtrl) { recognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       setVoiceStatus('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
@@ -2399,7 +2419,16 @@ function App() {
     recognition.start();
   }
 
-  function startLocationVoiceFill() {
+  async function startLocationVoiceFill() {
+    const nativeCtrl = await startNativeSpeech({
+      lang: navigator.language || 'en-US',
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Listening for address…'); fieldRefs.current[3]?.focus(); },
+      onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
+      onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
+      onError: (m) => setLocationStatus(m),
+      onEnd: () => window.setTimeout(() => setLocationListening(false), 500),
+    });
+    if (nativeCtrl) { locationRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       setLocationStatus('Address voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
