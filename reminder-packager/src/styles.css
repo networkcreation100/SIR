@@ -1254,7 +1254,9 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
 @media(max-width:900px){
   .workspace-grid.stacked-steps{
     display:block;position:relative;
-    padding-top:0;margin-top:8px;min-height:640px;
+    /* Push the whole step deck (tabs + cards) down so the Step 3 folder tab
+       clears the App Settings gear pinned top-right (gear = 44px @ top:18px). */
+    padding-top:0;margin-top:70px;min-height:640px;
   }
 
   /* Folder tab row sits directly ON TOP of the card deck — NOT sticky,
