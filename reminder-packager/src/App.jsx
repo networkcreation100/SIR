@@ -1765,6 +1765,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   const [shareUrl, setShareUrl] = useState('');
   const [secondaryEmailLink, setSecondaryEmailLink] = useState('');
   const [recipientListening, setRecipientListening] = useState(false);
+  const recipientRecognitionRef = useRef(null);
   const [recipientVoiceText, setRecipientVoiceText] = useState('');
   const { values: recipients, phones, emails, invalid, contacts, labels: recipientLabels, duplicates } = classifyRecipientRows(recipientRows);
   const namedRecipientCount = contacts.filter(contact => contact.name).length;
@@ -1848,15 +1849,21 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   }
 
   async function startRecipientVoiceSearch() {
+    // Tap again while listening = stop (native mic now runs continuously).
+    if (recipientRecognitionRef.current) {
+      try { recipientRecognitionRef.current.stop?.(); } catch {}
+      recipientRecognitionRef.current = null;
+      return;
+    }
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Listening for contact name, phone, or email…'); },
+      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Listening… tap the mic again when you are done.'); },
       onPartial: (t) => { if (t) { setRecipientVoiceText(t); setRecipientNotice(`Heard: \u201c${t}\u201d`); } },
       onFinal: (t) => { if (t) applyRecipientVoiceTranscript(t); },
       onError: (m) => setRecipientNotice(m),
-      onEnd: () => window.setTimeout(() => setRecipientListening(false), 500),
+      onEnd: () => { recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); },
     });
-    if (nativeCtrl) return;
+    if (nativeCtrl) { recipientRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
       setRecipientNotice('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
@@ -2361,14 +2368,20 @@ function App() {
   function pauseBackgroundMusicForMicrophone() { /* background music removed */ }
 
   async function startVoiceFill() {
+    // Tap again while listening = stop (native mic now runs continuously).
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop?.(); } catch {}
+      recognitionRef.current = null;
+      return;
+    }
     // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Listening…'); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Listening… tap the mic again when you are done.'); },
       onPartial: (t) => { if (t) setVoiceTranscript(t); },
       onFinal: (t) => { if (t) applyVoiceTranscript(t); },
       onError: (m) => setVoiceStatus(m),
-      onEnd: () => window.setTimeout(() => setListening(false), 500),
+      onEnd: () => { recognitionRef.current = null; window.setTimeout(() => setListening(false), 300); },
     });
     if (nativeCtrl) { recognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
@@ -2396,13 +2409,19 @@ function App() {
   }
 
   async function startLocationVoiceFill() {
+    // Tap again while listening = stop (native mic now runs continuously).
+    if (locationRecognitionRef.current) {
+      try { locationRecognitionRef.current.stop?.(); } catch {}
+      locationRecognitionRef.current = null;
+      return;
+    }
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Listening for address…'); fieldRefs.current[3]?.focus(); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Listening for address… tap the mic again when you are done.'); fieldRefs.current[3]?.focus(); },
       onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
       onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
       onError: (m) => setLocationStatus(m),
-      onEnd: () => window.setTimeout(() => setLocationListening(false), 500),
+      onEnd: () => { locationRecognitionRef.current = null; window.setTimeout(() => setLocationListening(false), 300); },
     });
     if (nativeCtrl) { locationRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
