@@ -1428,3 +1428,46 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
     border-top-left-radius:16px;border-top-right-radius:16px;
   }
 }
+/* Compact Send Reminder collapsed review state: preview card visible above, send actions stay docked below. */
+.send-modal-backdrop.collapsed-preview-mode{
+  align-items:flex-end;justify-content:center;
+  padding:0 12px max(12px, env(safe-area-inset-bottom));
+  background:transparent;
+  backdrop-filter:none;
+  pointer-events:none;
+  animation:none;
+}
+.send-modal-shell.collapsed-preview-shell{
+  width:min(100%,460px);
+  max-height:none;
+  overflow:visible;
+  border-radius:0;
+  pointer-events:auto;
+  animation:sendCollapseDock .18s ease-out both;
+}
+@keyframes sendCollapseDock{from{opacity:.75;transform:translateY(16px)}to{opacity:1;transform:none}}
+.send-modal-shell.collapsed-preview-shell .send-panel.collapsed-preview{
+  padding:12px;
+  border-radius:24px;
+  background:rgba(255,255,255,.96);
+  border:1px solid rgba(226,232,240,.95);
+  box-shadow:0 18px 48px rgba(15,23,42,.22);
+  backdrop-filter:blur(16px);
+}
+.send-panel.collapsed-preview > :not(.modal-actions){display:none!important}
+.send-panel.collapsed-preview .button-hierarchy{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  margin:0!important;
+}
+.send-panel.collapsed-preview .button-hierarchy button{
+  min-height:50px;border-radius:18px;font-size:15px;
+}
+.send-panel.collapsed-preview .preview-collapse-action{
+  box-shadow:0 10px 22px rgba(15,23,42,.08);
+}
+@media(max-width:520px){
+  .send-modal-backdrop.collapsed-preview-mode{padding:0 10px max(10px, env(safe-area-inset-bottom))}
+  .send-modal-shell.collapsed-preview-shell .send-panel.collapsed-preview{border-radius:22px;padding:10px}
+  .send-panel.collapsed-preview .button-hierarchy{gap:10px}
+  .send-panel.collapsed-preview .button-hierarchy button{min-height:48px;border-radius:16px}
+}

@@ -1964,7 +1964,7 @@ function buildComposeConfirmationMessage(channel, contacts) {
   return `Confirmation: ${label} opened for ${listContacts(contacts)}. Delivery is pending until you press Send in that app.`;
 }
 
-function RecipientPanel({ reminder, onClose, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '' }) {
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '' }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -2145,7 +2145,9 @@ function RecipientPanel({ reminder, onClose, onRecipientsChange, onValidRecipien
     }
   }
 
-  return <aside className="send-panel" aria-label="Send options panel">
+  const previewAction = onPreview || onClose;
+
+  return <aside className={`send-panel ${collapsed ? 'collapsed-preview' : ''}`} aria-label={collapsed ? 'Collapsed send options panel' : 'Send options panel'}>
     <div className="panel-header compact send-options-header"><div><p className="eyebrow tiny">Send options</p><h2>Send reminder</h2></div><div className="send-options-header-actions"><button type="button" className={`mic-button recipient-mic-button ${recipientListening ? 'listening' : ''}`} style={recipientListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={startRecipientVoiceSearch} aria-label="Speak or search contact"><Mic size={17}/></button><button type="button" className="send-panel-close" aria-label="Close Send Reminder panel" onClick={onClose}><X size={16}/></button></div></div>
     <p className="panel-copy">Type or speak names with phone numbers or email addresses.</p>
     {recipientVoiceText && <p className="recipient-voice-status">Heard: “{recipientVoiceText}”</p>}
@@ -2166,7 +2168,7 @@ function RecipientPanel({ reminder, onClose, onRecipientsChange, onValidRecipien
     <div className={`recognition-banner compact ${valid ? 'valid' : invalid.length ? 'invalid' : ''}`} role="status" aria-live="polite">
       {valid ? <><CheckCircle2 size={15}/> Ready: {namedRecipientCount ? `${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} · ` : ''}{phones.length ? `${phones.length} text` : ''}{phones.length && emails.length ? ' · ' : ''}{emails.length ? `${emails.length} email` : ''}</> : invalid.length ? <><AlertTriangle size={15}/> Fix unrecognized entry before Send.</> : <><Sparkles size={15}/> Smart field recognizes typed names, phones, and emails.</>}
     </div>
-    <div className="modal-actions button-hierarchy"><button className="secondary cancel" onClick={onClose}>Back to composer</button><button className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
+    <div className="modal-actions button-hierarchy"><button type="button" className="secondary cancel preview-collapse-action" onClick={previewAction}>Preview</button><button type="button" className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
     {message && <p className={!message.toLowerCase().includes('failed') && !message.toLowerCase().includes('could not') ? 'success' : 'field-error block'}>{message}</p>}
     {secondaryEmailLink && <button type="button" className="secondary full" onClick={() => { window.location.href = secondaryEmailLink; }}>Open email for email recipient</button>}
   </aside>;
@@ -2178,6 +2180,7 @@ function App() {
   const [form, setForm] = useState(initialReminder);
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
+  const [sendCollapsed, setSendCollapsed] = useState(false);
   // Standard-mode mobile stacked-steps front card: 1=Create, 2=Preview, 3=Send. Default Preview on top.
   const [stepFront, setStepFront] = useState(2);
   const [reviewTabsReady, setReviewTabsReady] = useState(false);
@@ -2883,16 +2886,16 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
       </div>}
     </section>
-    {compactMode && sendOpen && <div className="send-modal-backdrop" role="dialog" aria-modal="true" aria-label="Send options" onClick={() => setSendOpen(false)}>
-      <div className="send-modal-shell" onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} onClose={() => setSendOpen(false)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+    {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
+      <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
+        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(true)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
       </div>
     </div>}
   </main>;
