@@ -1471,3 +1471,48 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
   .send-panel.collapsed-preview .button-hierarchy{gap:10px}
   .send-panel.collapsed-preview .button-hierarchy button{min-height:48px;border-radius:16px}
 }
+/* Recipient inline shared-reminder editing: title/date/time/location directly inside the invitation card. */
+.recipient-shell .recipient-title-inline{
+  width:100%;border:2px solid #dbeafe;border-radius:18px;
+  background:#f8fbff;color:#111827;
+  font-size:24px;line-height:1.12;font-weight:900;letter-spacing:-.035em;
+  padding:12px 14px;margin:6px 0 12px;resize:vertical;min-height:74px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 8px 20px rgba(59,130,246,.08);
+}
+.recipient-shell .recipient-title-inline:focus,
+.recipient-shell .recipient-inline-location-edit input:focus,
+.recipient-shell .preview-edit-schedule input:focus{
+  outline:0;border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.14);
+}
+.recipient-shell .preview-edit-schedule{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 12px;
+}
+.recipient-shell .preview-edit-schedule label,
+.recipient-shell .recipient-inline-location-edit label{
+  display:grid;gap:6px;text-align:left;
+}
+.recipient-shell .preview-edit-schedule label span,
+.recipient-shell .recipient-inline-location-edit label span{
+  font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em;color:#64748b;
+}
+.recipient-shell .preview-edit-schedule input,
+.recipient-shell .recipient-inline-location-edit input{
+  width:100%;border:1px solid #bfdbfe;border-radius:14px;background:#fff;
+  padding:11px 12px;color:#111827;font-weight:850;font-size:14px;
+}
+.recipient-shell .recipient-inline-location-edit{margin:0 0 12px}
+.recipient-shell .preview-loctools-inline{
+  margin:8px 0 12px;
+}
+.recipient-shell .preview-pin-location-button{
+  margin-left:6px;padding:5px 9px;border-radius:999px;
+  background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;
+  font-size:11px;font-weight:900;
+}
+.recipient-shell .preview-live-map .preview-map-label-overlay{
+  max-width:78%;
+}
+@media(max-width:420px){
+  .recipient-shell .preview-edit-schedule{grid-template-columns:1fr;gap:8px}
+  .recipient-shell .recipient-title-inline{font-size:22px;min-height:68px}
+}

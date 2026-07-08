@@ -1400,7 +1400,7 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
@@ -1416,6 +1416,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   const noLocationSet = isLocationUnset(reminder.location);
   const locationLabel = noLocationSet ? 'No location set' : compactAddress(reminder.location);
   const dueLabel = noLocationSet && !recipientMode ? formatDueForPreviewTimezone(reminder, previewTimezone) : formatDue(reminder);
+  const canEditMapPin = Boolean(onPinLocation && (!recipientMode || editMode));
 
   function drawStart(e) {
     if (!e.shiftKey && e.pointerType === 'mouse') return;
@@ -1448,23 +1449,27 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
       <span className="voice-star-wrap"><Sparkles size={15}/></span>
       {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== 'Meeting at the bar' ? editText : 'Speak to automatically display the date, time, and location.'))}</span>}
-    </div> : <h3 className="preview-title">{reminder.title}</h3>}
+    </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className="preview-title">{reminder.title}</h3>}
     <div className={`due ${status.tone}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
-    {editMode && !recipientMode && <div className="preview-edit-schedule">
+    {editMode && <div className="preview-edit-schedule">
       <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
       <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
     </div>}
-    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && !recipientMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
-    {editMode && locationToolsOpen && !recipientMode && <div className="preview-loctools-inline" aria-label="Location tools options">
-      {onPinLocation && <button type="button" className="preview-loctools-option" onClick={() => { setPreviewPinPickerOpen(true); }}><MapPin size={16}/> Drop pin on map</button>}
+    {editMode && recipientMode && <div className="recipient-inline-location-edit">
+      <label><span>Location</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder location" placeholder="Search address, venue, landmark, or paste link" /></label>
+    </div>}
+    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
+    {editMode && locationToolsOpen && <div className="preview-loctools-inline" aria-label="Location tools options">
+      {canEditMapPin && <button type="button" className="preview-loctools-option" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(true); }}><MapPin size={16}/> Drop pin on map</button>}
       {onUseMyLocation && <button type="button" className="preview-loctools-option" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
+      {recipientMode && onClearLocation && <button type="button" className="preview-loctools-option" onClick={() => { onClearLocation(); }}><X size={16}/> Clear location</button>}
       {locationStatus && <p className="preview-loctools-status">{locationStatus}</p>}
     </div>}
     {recipientMode && sharedSummary && <div className="shared-change-summary"><CheckCircle2 size={15}/><span>{sharedSummary}{sharedMeta && <em>Changed by {formatEditorName(sharedMeta.editor)} · {formatChangeTimestamp(sharedMeta.at)}</em>}</span></div>}
     {expanded && <div className="preview-summary">
-      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Zoom-In and Zoom-Out Views" title="Zoom-In and Zoom-Out Views" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/><span className="preview-location-pin-label">Zoom-In and Zoom-Out Views</span></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
-      {compactMode && previewPinPickerOpen && onPinLocation && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
+      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Zoom-In and Zoom-Out Views" title="Zoom-In and Zoom-Out Views" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/><span className="preview-location-pin-label">Zoom-In and Zoom-Out Views</span></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && canEditMapPin && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
+      {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
@@ -2787,23 +2792,44 @@ function App() {
         </span>
       </button>}
       <section className={sharedCoverDismissed ? 'shared-live-file is-open' : 'shared-live-file'} aria-hidden={!sharedCoverDismissed}>
-        <ReminderCard reminder={activeReminder} recipientMode onLocationShared={saveSharedLocationUpdate} sharedSummary={lastSharedSummary} sharedMeta={lastSharedMeta} onEdit={() => setRecipientEditOpen(open => !open)} onForward={() => {}} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} />
+        <ReminderCard
+          reminder={activeReminder}
+          recipientMode
+          forceMap
+          onLocationShared={saveSharedLocationUpdate}
+          sharedSummary={lastSharedSummary}
+          sharedMeta={lastSharedMeta}
+          onEdit={async () => {
+            if (recipientEditOpen) {
+              await saveSharedChanges();
+              setRecipientEditOpen(false);
+              setPreviewLocationToolsOpen(false);
+            } else {
+              setForm(activeReminder);
+              setRecipientEditOpen(true);
+            }
+          }}
+          onForward={() => {}}
+          previewRecipients={previewRecipients}
+          showRecipients={showRecipientsInPreview}
+          onToggleRecipients={() => setShowRecipientsInPreview(value => !value)}
+          editMode={recipientEditOpen}
+          editDate={form.date}
+          editTime={form.time}
+          onEditDate={value => setField('date', value)}
+          onEditTime={value => setField('time', value)}
+          editLocation={form.location}
+          onEditLocation={value => setField('location', value)}
+          editText={form.title}
+          onEditText={value => setField('title', value)}
+          onPinLocation={(lat, lng) => pinLocation(lat, lng)}
+          locationToolsOpen={previewLocationToolsOpen}
+          onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)}
+          onUseMyLocation={useCurrentLocation}
+          onClearLocation={clearLocation}
+          locationStatus={locationStatus}
+        />
       </section>
-      {recipientEditOpen && <section className="recipient-edit-drawer" aria-label="Edit shared reminder schedule and location">
-        <h2>Edit shared schedule & location</h2>
-        <p>Changes save back to the shared reminder object for every recipient using this link.</p>
-        <div className="two core-time"><Field label="Date" error={validation.due}><input type="date" value={form.date} onChange={e => setField('date', e.target.value)} /></Field><Field label="Time" error={validation.due}><input type="time" value={form.time} onChange={e => setField('time', e.target.value)} /></Field></div>
-        <Field label="Location"><div className={`location-input-with-mic ${addressMicVisible ? 'has-mic' : ''} ${locationListening ? 'listening' : ''}`}><input ref={el => fieldRefs.current[3] = el} value={form.location} onChange={e => setField('location', e.target.value)} placeholder="Search address, venue, landmark, or paste link" />{addressMicVisible && <button type="button" className={`address-mic-button ${locationListening ? 'listening' : ''}`} style={locationListening ? { '--address-mic-bg': '#dcfce7', '--address-mic-fg': '#16a34a' } : undefined} onClick={startLocationVoiceFill} aria-label="Speak address"><Mic size={16}/></button>}</div></Field>
-        <div className="location-actions action-first recipient-location-actions">
-          <button type="button" onClick={() => { setAddressMicVisible(true); fieldRefs.current[3]?.focus(); }}><Mic size={15}/> Add address</button>
-          <button type="button" onClick={() => { setLocationToolsOpen(true); setMapOpen(true); }}><MapPin size={15}/> Drop pin</button>
-          <button type="button" onClick={useCurrentLocation}><LocateFixed size={15}/> Use my location</button>
-          <button type="button" onClick={clearLocation}>Clear location</button>
-        </div>
-        {locationStatus && <p className="location-status">{locationStatus}</p>}
-        {mapOpen && <section className="map-card action-map" aria-label="Recipient map picker"><LocationMap pin={form.locationPin} onSelect={(lat, lng) => pinLocation(lat, lng)} /><p className="map-help"><MapPin size={14}/> Tap anywhere on the map to drop a pin, then save the shared location.</p></section>}
-        <button type="button" className="primary full" onClick={saveSharedChanges} disabled={!formValid}>Save shared changes</button>
-      </section>}
       {sharedStatus && <p className="recipient-shared-status">{sharedStatus}</p>}
     </main>;
   }
