@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 import { Heart, Mail, MessageCircle, Send, ShieldCheck, X } from './icons.jsx';
+// Absolute base for backend functions. Relative '/functions/...' breaks in the
+// published native app (Capacitor origin https://localhost/) and on the GitHub
+// Pages / tunnel host, where it would resolve to the wrong origin. Always call
+// the base44 backend directly.
+const FUNCTIONS_BASE = 'https://superagent-934909c8.base44.app/functions';
 export function PrivacyStatementPopup({ onClose }) {
   return <div className="settings-modal-backdrop privacy-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="settings-modal privacy-modal" role="dialog" aria-modal="true" aria-label="Privacy Statement">
@@ -121,7 +126,7 @@ export function PremiumMembershipPopup({ onClose }) {
           document.head.appendChild(script);
         });
       }
-      const response = await fetch('/functions/stripeConfig', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const response = await fetch(`${FUNCTIONS_BASE}/stripeConfig`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok || !result.publishable_key) throw new Error(result.error || 'Stripe is not configured.');
       if (destroyed || !mountedRef.current) return;
@@ -184,7 +189,7 @@ export function PremiumMembershipPopup({ onClose }) {
     setProcessing(true);
     setStatus('Creating a secure payment...');
     try {
-      const intentRes = await fetch('/functions/stripePremiumPaymentIntent', {
+      const intentRes = await fetch(`${FUNCTIONS_BASE}/stripePremiumPaymentIntent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: donationAmount, email: email.trim(), name: name.trim() }),
