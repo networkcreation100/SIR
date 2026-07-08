@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles, buildReminderSnapshotSvg, buildReminderMessageBody, normalizeReminder, urgencyLevels, isCircleGesture } from './reminderEngine.js';
 import './styles.css';
-import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, Music2, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
+import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
 const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
 const PremiumMembershipPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PremiumMembershipPopup })));
@@ -11,7 +11,6 @@ import { startNativeSpeech } from './nativeSpeech.js';
 const placeholderReminderTitle = 'Meeting at the bar';
 const REMINDER_SYNC_URL = 'https://superagent-934909c8.base44.app/functions/reminderSync';
 const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRouteProxy';
-const BACKGROUND_MUSIC_VIDEO_ID = 'lAUySM5bOS0';
 
 function buildShareUrl(shareToken) {
   const url = new URL(window.location.href);
@@ -188,25 +187,6 @@ async function shareReminderSnapshotFile(reminder) {
   return true;
 }
 
-function loadYouTubeIframeApi() {
-  if (window.YT?.Player) return Promise.resolve();
-  if (window.__sirYouTubeApiPromise) return window.__sirYouTubeApiPromise;
-  window.__sirYouTubeApiPromise = new Promise(resolve => {
-    const previousReady = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      previousReady?.();
-      resolve();
-    };
-    const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
-    if (!existing) {
-      const script = document.createElement('script');
-      script.src = 'https://www.youtube.com/iframe_api';
-      script.async = true;
-      document.head.appendChild(script);
-    }
-  });
-  return window.__sirYouTubeApiPromise;
-}
 
 function formatChangeTimestamp(value) {
   const date = value ? new Date(value) : new Date();
@@ -1397,7 +1377,7 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '' }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
@@ -1434,17 +1414,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   }
 
   return <article className={`reminder-card simplified-preview ${editMode && locationToolsOpen ? 'loctools-active' : ''}`} style={{ '--accent': accent, '--schedule-border': scheduleBorder }}>
-    {editMode && locationToolsOpen && !recipientMode && <div className="preview-loctools-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onToggleLocationTools?.(); }}>
-      <div className="preview-loctools-sheet" role="dialog" aria-modal="true" aria-label="Location tools">
-        <div className="preview-loctools-head"><strong>Location tools</strong><button type="button" className="preview-loctools-close" aria-label="Close location tools" onClick={() => onToggleLocationTools?.()}><X size={16}/></button></div>
-        <div className="preview-loctools-actions">
-          {onPinLocation && <button type="button" onClick={() => { setPreviewPinPickerOpen(true); onToggleLocationTools?.(); }}><MapPin size={16}/> Drop pin on map</button>}
-          {onUseMyLocation && <button type="button" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
-          {onClearLocation && <button type="button" onClick={() => { onClearLocation(); }}>Clear location</button>}
-        </div>
-        {locationStatus && <p className="preview-loctools-status">{locationStatus}</p>}
-      </div>
-    </div>}
+
     <div className="preview-card-toolbar">
       {!recipientMode && onDelete && <button type="button" className="ghost preview-delete-card" aria-label="Delete preview reminder" title="Delete preview reminder" onClick={onDelete}><X size={17}/></button>}
       <button className={`ghost top-action icon-only ${expanded ? 'expanded' : 'collapsed'}`} aria-label={expanded ? 'Minimize preview' : 'Expand preview'} title={expanded ? 'Minimize preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}><ChevronDown size={18}/></button>
@@ -1452,19 +1422,24 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {compactMode && onCompactVoice && <button type="button" className={`mic-button preview-card-centered-mic ${compactVoiceListening ? 'listening' : ''}`} style={compactVoiceListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={onCompactVoice} aria-label="Speak to fill reminder"><Mic size={18}/></button>}
     {ring && <div className="magic-ring"><Sparkles size={22}/><span>Ready to send</span></div>}
     {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
-    {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${compactVoiceTranscript ? 'has-transcript' : ''}`} role="status" aria-live="polite">
+    {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
       <span className="voice-star-wrap"><Sparkles size={15}/></span>
-      <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || 'Speak to automatically display the date, time, and location.')}</span>
+      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== 'Meeting at the bar' ? editText : 'Speak to automatically display the date, time, and location.'))}</span>}
     </div> : <h3 className="preview-title">{reminder.title}</h3>}
     <div className={`due ${status.tone}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
     {editMode && !recipientMode && <div className="preview-edit-schedule">
       <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
       <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
     </div>}
-    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && !recipientMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
+    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && !recipientMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
+    {editMode && locationToolsOpen && !recipientMode && <div className="preview-loctools-inline" aria-label="Location tools options">
+      {onPinLocation && <button type="button" className="preview-loctools-option" onClick={() => { setPreviewPinPickerOpen(true); }}><MapPin size={16}/> Drop pin on map</button>}
+      {onUseMyLocation && <button type="button" className="preview-loctools-option" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
+      {locationStatus && <p className="preview-loctools-status">{locationStatus}</p>}
+    </div>}
     {recipientMode && sharedSummary && <div className="shared-change-summary"><CheckCircle2 size={15}/><span>{sharedSummary}{sharedMeta && <em>Changed by {formatEditorName(sharedMeta.editor)} · {formatChangeTimestamp(sharedMeta.at)}</em>}</span></div>}
     {expanded && <div className="preview-summary">
-      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} title={previewPinPickerOpen ? 'Close manual pin picker' : 'Manually pin correct location'} onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
+      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Zoom-In and Zoom-Out Views" title="Zoom-In and Zoom-Out Views" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/><span className="preview-location-pin-label">Zoom-In and Zoom-Out Views</span></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
       {compactMode && previewPinPickerOpen && onPinLocation && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
       {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${editMode ? 'zoom-in-view' : ''}`}>{editMode && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode} syncBus={editMode ? mapSync.current : null} syncRole="in" initialZoom={editMode ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
@@ -2176,6 +2151,8 @@ function App() {
   const [form, setForm] = useState(initialReminder);
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
+  // Standard-mode mobile stacked-steps front card: 1=Create, 2=Preview, 3=Send. Default Preview on top.
+  const [stepFront, setStepFront] = useState(2);
   const [sharedPackage, setSharedPackage] = useState(null);
   const [sharedCoverDismissed, setSharedCoverDismissed] = useState(false);
   const [sharedCoverFading, setSharedCoverFading] = useState(false);
@@ -2204,14 +2181,10 @@ function App() {
   const [previewEditOpen, setPreviewEditOpen] = useState(false);
   const [previewLocationToolsOpen, setPreviewLocationToolsOpen] = useState(false);
   const [settingsPopup, setSettingsPopup] = useState(null);
-  const [musicOn, setMusicOn] = useState(false);
-  const [musicStatus, setMusicStatus] = useState('Background music off.');
   const sharedLocationSaveRef = useRef({ time: 0, signature: '' });
   const recognitionRef = useRef(null);
   const previewVoiceTargetRef = useRef(null);
   const locationRecognitionRef = useRef(null);
-  const musicPlayerRef = useRef(null);
-  const musicMountRef = useRef(null);
   const compactAutoLocationAttempted = useRef(false);
   const fieldRefs = useRef([]);
   const savedReminder = reminders[0];
@@ -2506,6 +2479,9 @@ function App() {
   function startPreviewVoiceFill() {
     previewVoiceTargetRef.current = { index: currentPreviewIndex, id: previewReminder.id, reminder: previewReminder };
     setPreviewVoiceTargetIndex(currentPreviewIndex);
+    // Clear the displayed reminder text so voice input starts fresh
+    setForm(prev => ({ ...prev, title: '' }));
+    setVoiceTranscript('');
     startVoiceFill();
   }
 
@@ -2556,12 +2532,7 @@ function App() {
     else if (parsed.nearestPlace) await resolveNearestSmartPlace(parsed.nearestPlace, parsed.recipients);
   }
 
-  function pauseBackgroundMusicForMicrophone() {
-    if (!musicOn) return;
-    musicPlayerRef.current?.pauseVideo?.();
-    setMusicOn(false);
-    setMusicStatus('Background music paused while microphone is active.');
-  }
+  function pauseBackgroundMusicForMicrophone() { /* background music removed */ }
 
   async function startVoiceFill() {
     // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
@@ -2662,63 +2633,6 @@ function App() {
     }
   }
 
-
-  async function ensureMusicPlayer() {
-    if (musicPlayerRef.current) return musicPlayerRef.current;
-    if (!musicMountRef.current) throw new Error('Music player is not ready.');
-    await loadYouTubeIframeApi();
-    return new Promise((resolve, reject) => {
-      try {
-        musicPlayerRef.current = new window.YT.Player(musicMountRef.current, {
-          width: '1',
-          height: '1',
-          videoId: BACKGROUND_MUSIC_VIDEO_ID,
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            disablekb: 1,
-            loop: 1,
-            modestbranding: 1,
-            playsinline: 1,
-            playlist: BACKGROUND_MUSIC_VIDEO_ID,
-            rel: 0
-          },
-          events: {
-            onReady: event => {
-              event.target.setVolume(16);
-              resolve(event.target);
-            },
-            onError: () => {
-              setMusicStatus('Music could not load from YouTube.');
-              reject(new Error('Music could not load from YouTube.'));
-            }
-          }
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  async function toggleBackgroundMusic() {
-    if (musicOn) {
-      musicPlayerRef.current?.pauseVideo?.();
-      setMusicOn(false);
-      setMusicStatus('Background music off.');
-      return;
-    }
-    setMusicStatus('Starting soft background music…');
-    try {
-      const player = await ensureMusicPlayer();
-      player.setVolume?.(16);
-      player.playVideo?.();
-      setMusicOn(true);
-      setMusicStatus('Soft background music on.');
-    } catch (error) {
-      setMusicOn(false);
-      setMusicStatus(error.message || 'Music could not start.');
-    }
-  }
 
   function advance(event, index) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -2865,7 +2779,7 @@ function App() {
 
   return <main className="app-shell">
     <section className="hero app-settings-hero">
-      <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span> <button type="button" className={`music-toggle ${musicOn ? 'on' : ''}`} onClick={toggleBackgroundMusic} aria-label={musicOn ? 'Turn background music off' : 'Turn background music on'} title={musicOn ? 'Turn background music off' : 'Turn background music on'}><Music2 size={15}/></button></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1><span className="sr-only" role="status" aria-live="polite">{musicStatus}</span><div className="background-music-player" aria-hidden="true" ref={musicMountRef}></div></div>
+      <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1></div>
       <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : 'Open app settings'} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/></button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
         <div className="settings-menu-head"><strong>Menu</strong><button type="button" className="settings-menu-close" aria-label="Close menu" onClick={() => setAppSettingsOpen(false)}><X size={16}/></button></div>
         <div className="settings-menu-group display-mode-group"><span>Display mode</span>
@@ -2888,8 +2802,13 @@ function App() {
       {settingsPopup === 'support' && <ContactSupportPopup onClose={() => setSettingsPopup(null)} />}
       {settingsPopup === 'premium' && <PremiumMembershipPopup onClose={() => setSettingsPopup(null)} />}
     </React.Suspense>
-    <section className={`workspace-grid ${sendOpen ? 'with-send-panel' : ''} ${compactMode ? 'compact-display-mode' : 'standard-display-mode'}`}>
-      {!compactMode && <form className="panel composer" onSubmit={e => { e.preventDefault(); sendReminderFromComposer(); }}>
+    <section className={`workspace-grid ${compactMode ? 'compact-display-mode' : `standard-display-mode stacked-steps step-front-${stepFront}`}`}>
+      {!compactMode && <div className="steps-folder-tabs" role="tablist" aria-label="Reminder steps">
+        <button type="button" role="tab" className={`steps-folder-tab tab-1 ${stepFront === 1 ? 'active' : ''}`} aria-selected={stepFront === 1} onClick={() => { setStepFront(1); }}><b>Step 1</b><small>Create</small></button>
+        <button type="button" role="tab" className={`steps-folder-tab tab-2 ${stepFront === 2 ? 'active' : ''}`} aria-selected={stepFront === 2} onClick={() => { setStepFront(2); }}><b>Step 2</b><small>Preview</small></button>
+        <button type="button" role="tab" className={`steps-folder-tab tab-3 ${stepFront === 3 ? 'active' : ''}`} aria-selected={stepFront === 3} onClick={() => { setStepFront(3); setSendOpen(true); }}><b>Step 3</b><small>Send</small></button>
+      </div>}
+      {!compactMode && <form className="panel composer step-card step-card-1" onSubmit={e => { e.preventDefault(); sendReminderFromComposer(); }}>
         <div className="composer-title-row"><h2><Bell size={20}/> Create a reminder</h2><button type="button" className={`mic-button ${listening ? 'listening' : ''}`} style={listening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={startVoiceFill} aria-label="Speak to fill reminder"><Mic size={18}/></button></div>
         <div className={`voice-capture-box ${listening ? 'listening' : ''} ${voiceTranscript ? 'has-transcript' : ''}`} role="status" aria-live="polite">
           <span className="voice-star-wrap"><Sparkles size={15}/></span>
@@ -2924,7 +2843,7 @@ function App() {
         </div>}
         <button className="primary full composer-recipient-cta" type="submit" disabled={!formValid}><Send size={16}/> Send to whom?</button>
       </form>}
-      <section className="preview-stack">
+      <section className="preview-stack step-card step-card-2">
         <div className="stack-shadow s1"/><div className="stack-shadow s2"/>
         {previewReminders.length > 1 && <div className="preview-stack-nav" aria-label="Preview reminder navigation">
           <button type="button" className="ghost nav-arrow" aria-label="Previous reminder" onClick={showPreviousPreviewCard}><ChevronLeft size={15}/></button>
@@ -2932,11 +2851,18 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setForm(previewReminder); setPreviewEditOpen(open => !open); } else { setDisplayMode('compact'); } }} onForward={() => setSendOpen(true)} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} />
         </div>
       </section>
-      {sendOpen && <RecipientPanel reminder={activeReminder} onClose={() => setSendOpen(false)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />}
+      {!compactMode && <div className="step-card step-card-3 send-step-card">
+        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+      </div>}
     </section>
+    {compactMode && sendOpen && <div className="send-modal-backdrop" role="dialog" aria-modal="true" aria-label="Send options" onClick={() => setSendOpen(false)}>
+      <div className="send-modal-shell" onClick={e => e.stopPropagation()}>
+        <RecipientPanel reminder={activeReminder} onClose={() => setSendOpen(false)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+      </div>
+    </div>}
   </main>;
 }
 
