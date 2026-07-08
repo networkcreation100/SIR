@@ -1982,6 +1982,14 @@ function App() {
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
   const [sendCollapsed, setSendCollapsed] = useState(false);
+  // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
+  // the preview card underneath gets bottom padding and can scroll fully clear
+  // of the fixed bar (mirrors the recipient-edit bottom-bar behavior).
+  useEffect(() => {
+    const active = sendOpen && sendCollapsed;
+    document.body.classList.toggle('sir-send-collapsed', active);
+    return () => document.body.classList.remove('sir-send-collapsed');
+  }, [sendOpen, sendCollapsed]);
   // Standard-mode mobile stacked-steps front card: 1=Create, 2=Preview, 3=Send. Default Preview on top.
   const [stepFront, setStepFront] = useState(2);
   const [reviewTabsReady, setReviewTabsReady] = useState(false);

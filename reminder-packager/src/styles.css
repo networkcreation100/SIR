@@ -1467,6 +1467,21 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
 .send-panel.collapsed-preview .preview-collapse-action{
   box-shadow:0 10px 22px rgba(15,23,42,.08);
 }
+/* When the Send bar is docked (collapsed Back/Send), let the preview card
+   scroll freely above it: reserve space at the bottom of the stack and allow
+   the page to scroll so the card's full content (map + Send row) is reachable. */
+body.sir-send-collapsed .preview-stack{
+  padding-bottom:150px !important;
+  min-height:auto !important;
+}
+body.sir-send-collapsed .compact-display-mode .preview-stack{
+  padding-bottom:150px !important;
+}
+body.sir-send-collapsed{overflow-y:auto;}
+@media(max-width:520px){
+  body.sir-send-collapsed .preview-stack,
+  body.sir-send-collapsed .compact-display-mode .preview-stack{padding-bottom:138px !important}
+}
 @media(max-width:520px){
   .send-modal-backdrop.collapsed-preview-mode{padding:0 10px max(10px, env(safe-area-inset-bottom))}
   .send-modal-shell.collapsed-preview-shell .send-panel.collapsed-preview{border-radius:22px;padding:10px}
