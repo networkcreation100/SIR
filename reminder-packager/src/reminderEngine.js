@@ -49,6 +49,7 @@ export function normalizeReminder(input) {
     autoDismissMinutes: Number(input.autoDismissMinutes || 5),
     version: Number(input.version || 1),
     createdAt: input.createdAt || now.toISOString(),
+    sentAt: input.sentAt || null,
     updatedAt: now.toISOString(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };

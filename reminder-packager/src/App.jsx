@@ -244,6 +244,13 @@ function formatEditorName(value) {
   return String(value).replace(/[-_]/g, ' ');
 }
 
+function formatSentStamp(value) {
+  const date = value ? new Date(value) : new Date();
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+  }).format(date);
+}
+
 async function reminderSync(body) {
   const response = await fetch(REMINDER_SYNC_URL, {
     method: 'POST',
@@ -1404,7 +1411,7 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText, sendPanelOpen = false }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
@@ -1480,7 +1487,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
         {onToggleRecipients && <button type="button" className="ghost recipient-visibility" onClick={onToggleRecipients}>Hide</button>}
       </div>}
     </div>}
-    {compactMode && !recipientMode ? <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div> : <p className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><span>Edit the schedule, location, or location tracking on this device.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</p>}
+    {compactMode && !recipientMode ? (reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)) : <p className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><span>Edit the schedule, location, or location tracking on this device.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</p>}
   </article>;
 }
 
@@ -1786,7 +1793,7 @@ function buildComposeConfirmationMessage(channel, contacts) {
   return `Confirmation: ${label} opened for ${listContacts(contacts)}. Delivery is pending until you press Send in that app.`;
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '' }) {
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -1968,6 +1975,11 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
         });
       } catch (notifyErr) { /* non-fatal: notifications are best-effort */ }
 
+      // Stamp the sent time and hand the sent reminder back to the parent so it can
+      // move this card to the back of the stack and surface a confirmation screen.
+      const sentStampedReminder = { ...sharedReminder, sentAt: new Date().toISOString(), recipients: displayRecipients };
+      try { onSent && onSent(sentStampedReminder); } catch (_) { /* ignore */ }
+
       if (phones.length) {
         if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails));
         setMessage(`${buildComposeConfirmationMessage('text', phones)}${emails.length ? ' Email recipient also recognized — open email after the text app if needed.' : ''}`);
@@ -2021,6 +2033,7 @@ function App() {
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
   const [sendCollapsed, setSendCollapsed] = useState(false);
+  const [sentConfirmation, setSentConfirmation] = useState(null);
   // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
   // the preview card underneath gets bottom padding and can scroll fully clear
   // of the fixed bar (mirrors the recipient-edit bottom-bar behavior).
@@ -2663,6 +2676,35 @@ function App() {
     saveReminder();
     setSendOpen(true);
   }
+
+  // Called once the shared reminder has been created on the server (from RecipientPanel).
+  // Stamps the sent card, moves it to the BACK of the preview stack, resets the composer
+  // to a fresh blank Preview card at the front, and surfaces the confirmation screen.
+  function handleReminderSent(sentReminder) {
+    const stamped = normalizeReminder({ ...sentReminder, sentAt: sentReminder.sentAt || new Date().toISOString() });
+    // Push the sent card into the saved stack so previewReminders renders it behind
+    // the fresh active card (the active/composer card is always index 0).
+    setReminders(prev => {
+      const withoutDup = prev.filter(item => {
+        const n = normalizeReminder(item);
+        return n.id !== stamped.id && !sameReminderCard(n, stamped);
+      });
+      return [stamped, ...withoutDup].slice(0, 6);
+    });
+    // Reset the composer to a brand-new blank Preview card.
+    setForm({ ...initialReminder, id: undefined, title: '', location: '', locationPin: null, sharedLocations: [], notes: '', date: '', time: '' });
+    setPreviewIndex(0);
+    setPreviewEditOpen(false);
+    setPreviewLocationToolsOpen(false);
+    setVoiceRecipientText('');
+    setSendOpen(false);
+    setSendCollapsed(false);
+    setSentConfirmation({
+      title: stamped.title,
+      recipients: Array.isArray(stamped.recipients) ? stamped.recipients : [],
+      sentAt: stamped.sentAt
+    });
+  }
   function downloadPackage() {
     makeAttachmentFiles(activeReminder).forEach(file => {
       const url = URL.createObjectURL(file);
@@ -2822,7 +2864,7 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
@@ -2831,7 +2873,18 @@ function App() {
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} />
+      </div>
+    </div>}
+    {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label="Reminder sent" onClick={() => setSentConfirmation(null)}>
+      <div className="sent-confirm-card" onClick={e => e.stopPropagation()}>
+        <div className="sent-confirm-check"><CheckCircle2 size={44} /></div>
+        <h2>Reminder sent</h2>
+        <p className="sent-confirm-title">{sentConfirmation.title && sentConfirmation.title !== 'Untitled Reminder' ? sentConfirmation.title : 'Your reminder'}</p>
+        {sentConfirmation.recipients?.length > 0 && <p className="sent-confirm-recipients">Sent to {sentConfirmation.recipients.join(', ')}</p>}
+        <p className="sent-confirm-time">{formatSentStamp(sentConfirmation.sentAt)}</p>
+        <p className="sent-confirm-hint">This reminder moved to the back of your cards. Use the navigation to review it.</p>
+        <button type="button" className="primary full sent-confirm-done" onClick={() => setSentConfirmation(null)}>Done</button>
       </div>
     </div>}
   </main>;
