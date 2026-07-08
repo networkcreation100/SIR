@@ -45,24 +45,33 @@ function loadLeaflet() {
 function registerSyncMap(bus, role, mapInstance, L) {
   if (!bus || !mapInstance) return;
   bus.maps = bus.maps || {};
+
+  // Re-registration can happen when compact pin-picker/edit mode toggles.
+  // Always detach any stale handler first so map events don't stack and echo.
+  if (mapInstance.__syncHandler) {
+    mapInstance.off('moveend', mapInstance.__syncHandler);
+    mapInstance.off('zoomend', mapInstance.__syncHandler);
+    delete mapInstance.__syncHandler;
+  }
+
   bus.maps[role] = mapInstance;
   if (typeof bus.ZOOM_OFFSET !== 'number') bus.ZOOM_OFFSET = 4;
 
   const otherRole = role === 'out' ? 'in' : 'out';
   const handler = () => {
     if (bus.applying) return;
-    const other = bus.maps[otherRole];
+    const other = bus.maps?.[otherRole];
     if (!other) return;
     bus.applying = true;
     try {
       const center = mapInstance.getCenter();
       const zoom = mapInstance.getZoom();
-      // 'in' is closer than 'out' by ZOOM_OFFSET.
+      // Intended modes: Zoom-In stays closer than Zoom-Out by ZOOM_OFFSET.
       const targetZoom = otherRole === 'in' ? zoom + bus.ZOOM_OFFSET : zoom - bus.ZOOM_OFFSET;
       const clamped = Math.max(other.getMinZoom(), Math.min(other.getMaxZoom(), targetZoom));
       other.setView(center, clamped, { animate: false });
     } finally {
-      // release on next tick so the mirrored map's own events don't echo back
+      // Release on next tick so the mirrored map's own events don't echo back.
       setTimeout(() => { bus.applying = false; }, 0);
     }
   };
@@ -1051,9 +1060,23 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   }, [sharedLocations, resolvedPin, mapReady, routeMeta, isTrackingLocation]);
 
   useEffect(() => {
-    setTimeout(() => map.current?.invalidateSize(), mapExpanded ? 220 : 80);
+    const refreshMapLayout = () => {
+      const liveMap = map.current;
+      if (!liveMap) return;
+      liveMap.invalidateSize({ pan: false });
+      const center = liveMap.getCenter();
+      liveMap.setView(center, liveMap.getZoom(), { animate: false });
+    };
+
+    // Leaflet measures its container before/while the CSS expanded layout settles.
+    // Multiple invalidations prevent the "map tiles only at the top, blank below" bug.
+    const delays = mapExpanded ? [0, 80, 180, 320, 600] : [0, 80, 180];
+    const timers = delays.map(delay => setTimeout(refreshMapLayout, delay));
     document.body.classList.toggle('sir-map-expanded', mapExpanded);
-    return () => document.body.classList.remove('sir-map-expanded');
+    return () => {
+      timers.forEach(clearTimeout);
+      document.body.classList.remove('sir-map-expanded');
+    };
   }, [mapExpanded]);
 
   function fitOrLock(latLngsOrBounds, options = { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.2 }) {
@@ -1441,7 +1464,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {expanded && <div className="preview-summary">
       <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Zoom-In and Zoom-Out Views" title="Zoom-In and Zoom-Out Views" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/><span className="preview-location-pin-label">Zoom-In and Zoom-Out Views</span></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && onPinLocation && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
       {compactMode && previewPinPickerOpen && onPinLocation && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode} syncBus={editMode ? mapSync.current : null} syncRole="in" initialZoom={editMode ? 17 : null} /></div>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={!recipientMode ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
