@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronL
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
 import { getEmailValidationError, isEmail, isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows } from './recipientUtils.js';
 import { startNativeSpeech, isNativePlatform } from './nativeSpeech.js';
+import { scheduleReminderNotification, ensureNotifyPermission, syncAppBadge } from './nativeNotify.js';
 
 const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
@@ -1955,6 +1956,17 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       const savedVersion = Number(saved.reminder?.version || saved.version || payload.version || 1);
       let sharedReminder = { ...payload, share_token: token, shareUrl: url, version: savedVersion };
       setShareUrl(url);
+      // Schedule a local notification 15 minutes before the meeting/appointment time (native only).
+      try {
+        await scheduleReminderNotification({
+          id: token,
+          share_token: token,
+          title: sharedReminder.title,
+          date: sharedReminder.date,
+          time: sharedReminder.time,
+          location: sharedReminder.location
+        });
+      } catch (notifyErr) { /* non-fatal: notifications are best-effort */ }
 
       if (phones.length) {
         if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails));
@@ -2153,6 +2165,16 @@ function App() {
     setPreviewMotionKey(key => key + 1);
   }
 
+  // On a native device, request notification permission up-front and keep the
+  // app-icon badge in sync with pending reminders whenever the app becomes active.
+  useEffect(() => {
+    ensureNotifyPermission().catch(() => {});
+    syncAppBadge().catch(() => {});
+    const onVisible = () => { if (document.visibilityState === 'visible') syncAppBadge().catch(() => {}); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shareToken = params.get('share');
@@ -2172,6 +2194,15 @@ function App() {
         setSharedCoverDismissed(false);
         setSharedCoverFading(false);
         setSharedStatus(`Shared file loaded · version ${record.version}${record.last_editor ? ` · last edited by ${record.last_editor}` : ''}`);
+        // Recipient gets the 15-minute-before alert for the shared reminder (native only).
+        scheduleReminderNotification({
+          id: record.share_token,
+          share_token: record.share_token,
+          title: payload.title,
+          date: payload.date,
+          time: payload.time,
+          location: payload.location
+        }).catch(() => {});
       })
       .catch(error => {
         if (cancelled) return;
@@ -2258,6 +2289,17 @@ function App() {
       setRecipientEditOpen(false);
       setMapOpen(false);
       setSharedStatus(`Shared changes saved · version ${record.version}`);
+      // Recipient also gets a 15-minute-before notification on their device (native only).
+      try {
+        await scheduleReminderNotification({
+          id: record.share_token,
+          share_token: record.share_token,
+          title: savedPayload.title,
+          date: savedPayload.date,
+          time: savedPayload.time,
+          location: savedPayload.location
+        });
+      } catch (notifyErr) { /* best-effort */ }
     } catch (error) {
       if (error.data?.conflict && error.data.current?.payload) {
         const current = error.data.current;
