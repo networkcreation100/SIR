@@ -31,6 +31,7 @@
     "jsdom": "latest",
     "playwright": "^1.61.1",
     "typescript": "latest",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "latest"
   }
 }

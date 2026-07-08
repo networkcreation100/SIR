@@ -4,7 +4,7 @@ import './styles.css';
 import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
 import { getEmailValidationError, isEmail, isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows } from './recipientUtils.js';
-import { startNativeSpeech } from './nativeSpeech.js';
+import { startNativeSpeech, isNativePlatform } from './nativeSpeech.js';
 
 const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
@@ -13,8 +13,35 @@ const PremiumMembershipPopup = React.lazy(() => import('./settingsPopups.jsx').t
 const placeholderReminderTitle = 'Meeting at the bar';
 const REMINDER_SYNC_URL = 'https://superagent-934909c8.base44.app/functions/reminderSync';
 const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRouteProxy';
+// Permanent PUBLIC web page that renders a shared reminder from its ?share= token.
+// Share links MUST point here — never at the app's own origin. In the published
+// native app window.location is an internal Capacitor origin (Android
+// https://localhost/, iOS capacitor://localhost/), so a link built from it opens
+// nothing on the recipient's phone. That is why recipient reminders worked in the
+// browser/tunnel test but failed after publishing to the stores.
+const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
+
+function isInternalAppOrigin() {
+  try {
+    if (isNativePlatform && isNativePlatform()) return true;
+    const h = (window.location && window.location.hostname) || '';
+    const proto = (window.location && window.location.protocol) || '';
+    // Capacitor / file / localhost origins cannot be opened by a remote recipient.
+    return proto === 'capacitor:' || proto === 'file:' || h === 'localhost' || h === '127.0.0.1' || h === '';
+  } catch {
+    return true;
+  }
+}
 
 function buildShareUrl(shareToken) {
+  // Published native app (or any non-public origin): always use the permanent
+  // public web page so the recipient's link actually resolves on their device.
+  if (isInternalAppOrigin()) {
+    const url = new URL(PUBLIC_SHARE_BASE);
+    url.searchParams.set('share', shareToken);
+    return url.toString();
+  }
+  // Web/dev/tunnel: keep using the current public origin so live testing works.
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
