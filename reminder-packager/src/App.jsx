@@ -2173,7 +2173,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     <div className={`recognition-banner compact ${valid ? 'valid' : invalid.length ? 'invalid' : ''}`} role="status" aria-live="polite">
       {valid ? <><CheckCircle2 size={15}/> Ready: {namedRecipientCount ? `${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} · ` : ''}{phones.length ? `${phones.length} text` : ''}{phones.length && emails.length ? ' · ' : ''}{emails.length ? `${emails.length} email` : ''}</> : invalid.length ? <><AlertTriangle size={15}/> Fix unrecognized entry before Send.</> : <><Sparkles size={15}/> Smart field recognizes typed names, phones, and emails.</>}
     </div>
-    <div className="modal-actions button-hierarchy"><button type="button" className="secondary cancel preview-collapse-action" onClick={previewAction}>Preview</button><button type="button" className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
+    <div className="modal-actions button-hierarchy"><button type="button" className="secondary cancel preview-collapse-action" onClick={previewAction}>{collapsed ? 'Back' : 'Preview'}</button><button type="button" className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
     {message && <p className={!message.toLowerCase().includes('failed') && !message.toLowerCase().includes('could not') ? 'success' : 'field-error block'}>{message}</p>}
     {secondaryEmailLink && <button type="button" className="secondary full" onClick={() => { window.location.href = secondaryEmailLink; }}>Open email for email recipient</button>}
   </aside>;
@@ -2921,7 +2921,7 @@ function App() {
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(true)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
       </div>
     </div>}
   </main>;
