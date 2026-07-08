@@ -2128,6 +2128,23 @@ function App() {
     if (previewIndex >= previewReminders.length) setPreviewIndex(Math.max(previewReminders.length - 1, 0));
   }, [previewIndex, previewReminders.length]);
 
+  // On mobile, always open in compact view with the Preview panel at the top.
+  // Runs once on mount (skipped for shared recipient links, which have their own flow).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isSharedRecipient) return;
+    const isMobileViewport = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+    if (!isMobileViewport) return;
+    setDisplayMode('compact');
+    setPreviewIndex(0);
+    setSendOpen(false);
+    setSendCollapsed(false);
+    setPreviewEditOpen(false);
+    // Land at the very top so the Preview panel is the first thing shown.
+    requestAnimationFrame(() => { try { window.scrollTo(0, 0); } catch (_) {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     window.__SIR_TEST_VOICE__ = applyVoiceTranscript;
     return () => { delete window.__SIR_TEST_VOICE__; };
