@@ -1390,3 +1390,41 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
     min-height:calc(100vh - 122px)!important;
   }
 }
+/* Mobile review phase — after a valid recipient is entered, switch from Step 1/2/3 to Preview/Send tabs. */
+.preview-send-review-tabs{display:none}
+@media(max-width:900px){
+  .preview-send-review-tabs{
+    display:flex;align-items:flex-end;gap:8px;
+    position:relative;z-index:23;
+    margin:0 4px -1px;padding:0;
+  }
+  .review-switch-tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:11px 8px 13px;
+    border:1px solid #e2e8f0;border-bottom:0;
+    border-radius:16px 16px 0 0;
+    background:#eef2f7;color:#64748b;
+    box-shadow:0 -3px 10px rgba(15,23,42,.06);
+    transform:translateY(4px) scale(.97);
+    transition:transform .18s ease,background .18s ease,color .18s ease,box-shadow .18s ease,border-color .18s ease;
+  }
+  .review-switch-tab b{font-size:14px;font-weight:950;letter-spacing:.01em}
+  .review-switch-tab small{font-size:10px;font-weight:900;letter-spacing:.03em;text-transform:uppercase;color:#94a3b8}
+  .review-switch-tab.active{
+    background:#ffffff;color:#c2410c;border-color:#f97316;
+    transform:translateY(0) scale(1);
+    box-shadow:0 -8px 18px rgba(249,115,22,.16);
+    z-index:24;
+  }
+  .review-switch-tab.active b{color:#c2410c}
+  .review-switch-tab.active small{color:#9a3412}
+  .review-switch-tab.active::before{
+    content:"";position:absolute;left:14px;right:14px;top:0;height:3px;
+    border-radius:999px;background:#f97316;
+  }
+  .review-switch-tab{position:relative}
+  .workspace-grid.stacked-steps.review-tabs-ready .preview-stack,
+  .workspace-grid.stacked-steps.review-tabs-ready .send-step-card .send-panel{
+    border-top-left-radius:16px;border-top-right-radius:16px;
+  }
+}

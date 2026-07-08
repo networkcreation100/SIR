@@ -1964,7 +1964,7 @@ function buildComposeConfirmationMessage(channel, contacts) {
   return `Confirmation: ${label} opened for ${listContacts(contacts)}. Delivery is pending until you press Send in that app.`;
 }
 
-function RecipientPanel({ reminder, onClose, onRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '' }) {
+function RecipientPanel({ reminder, onClose, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '' }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -2092,6 +2092,10 @@ function RecipientPanel({ reminder, onClose, onRecipientsChange, showRecipientsI
   }, [recipientRows, showRecipientsInPreview]);
 
   useEffect(() => {
+    onValidRecipientsChange?.(valid);
+  }, [valid]);
+
+  useEffect(() => {
     if (initialRecipientText) commitRecipientRows(rowsFromRecipientText(initialRecipientText).map(row => smartFormatRecipients(row)));
   }, [initialRecipientText]);
 
@@ -2176,6 +2180,7 @@ function App() {
   const [sendOpen, setSendOpen] = useState(false);
   // Standard-mode mobile stacked-steps front card: 1=Create, 2=Preview, 3=Send. Default Preview on top.
   const [stepFront, setStepFront] = useState(2);
+  const [reviewTabsReady, setReviewTabsReady] = useState(false);
   const [sharedPackage, setSharedPackage] = useState(null);
   const [sharedCoverDismissed, setSharedCoverDismissed] = useState(false);
   const [sharedCoverFading, setSharedCoverFading] = useState(false);
@@ -2825,11 +2830,15 @@ function App() {
       {settingsPopup === 'support' && <ContactSupportPopup onClose={() => setSettingsPopup(null)} />}
       {settingsPopup === 'premium' && <PremiumMembershipPopup onClose={() => setSettingsPopup(null)} />}
     </React.Suspense>
-    <section className={`workspace-grid ${compactMode ? 'compact-display-mode' : `standard-display-mode stacked-steps step-front-${stepFront}`}`}>
-      {!compactMode && <div className="steps-folder-tabs" role="tablist" aria-label="Reminder steps">
+    <section className={`workspace-grid ${compactMode ? 'compact-display-mode' : `standard-display-mode stacked-steps step-front-${stepFront} ${reviewTabsReady ? 'review-tabs-ready' : ''}`}`}>
+      {!compactMode && !reviewTabsReady && <div className="steps-folder-tabs" role="tablist" aria-label="Reminder steps">
         <button type="button" role="tab" className={`steps-folder-tab tab-1 ${stepFront === 1 ? 'active' : ''}`} aria-selected={stepFront === 1} onClick={() => { setStepFront(1); }}><b>Step 1</b><small>Create</small></button>
         <button type="button" role="tab" className={`steps-folder-tab tab-2 ${stepFront === 2 ? 'active' : ''}`} aria-selected={stepFront === 2} onClick={() => { setStepFront(2); }}><b>Step 2</b><small>Preview</small></button>
         <button type="button" role="tab" className={`steps-folder-tab tab-3 ${stepFront === 3 ? 'active' : ''}`} aria-selected={stepFront === 3} onClick={() => { setStepFront(3); setSendOpen(true); }}><b>Step 3</b><small>Send</small></button>
+      </div>}
+      {!compactMode && reviewTabsReady && <div className="preview-send-review-tabs" role="tablist" aria-label="Preview and send review tabs">
+        <button type="button" role="tab" className={`review-switch-tab ${stepFront === 2 ? 'active' : ''}`} aria-selected={stepFront === 2} onClick={() => setStepFront(2)}><b>Preview</b><small>Review reminder</small></button>
+        <button type="button" role="tab" className={`review-switch-tab ${stepFront === 3 ? 'active' : ''}`} aria-selected={stepFront === 3} onClick={() => { setStepFront(3); setSendOpen(true); }}><b>Send</b><small>Review recipient</small></button>
       </div>}
       {!compactMode && <form className="panel composer step-card step-card-1" onSubmit={e => { e.preventDefault(); sendReminderFromComposer(); }}>
         <div className="composer-title-row"><h2><Bell size={20}/> Create a reminder</h2><button type="button" className={`mic-button ${listening ? 'listening' : ''}`} style={listening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={startVoiceFill} aria-label="Speak to fill reminder"><Mic size={18}/></button></div>
@@ -2878,7 +2887,7 @@ function App() {
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className="send-modal-backdrop" role="dialog" aria-modal="true" aria-label="Send options" onClick={() => setSendOpen(false)}>
