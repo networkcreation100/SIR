@@ -1458,7 +1458,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {editMode && recipientMode && <div className="recipient-inline-location-edit">
       <label><span>Location</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder location" placeholder="Search address, venue, landmark, or paste link" /></label>
     </div>}
-    <div className="inline-actions inline-actions-under-calendar"><button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>{editMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
+    <div className="inline-actions inline-actions-under-calendar">{!(recipientMode && editMode) && <button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>}{editMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
     {editMode && locationToolsOpen && <div className="preview-loctools-inline" aria-label="Location tools options">
       {canEditMapPin && <button type="button" className="preview-loctools-option" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(true); }}><MapPin size={16}/> Drop pin on map</button>}
       {onUseMyLocation && <button type="button" className="preview-loctools-option" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
@@ -2197,6 +2197,7 @@ function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [locationToolsOpen, setLocationToolsOpen] = useState(false);
   const [recipientEditOpen, setRecipientEditOpen] = useState(false);
+  const [recipientPreviewMode, setRecipientPreviewMode] = useState(false);
   const [lastSharedSummary, setLastSharedSummary] = useState('');
   const [lastSharedMeta, setLastSharedMeta] = useState(null);
   const [locationStatus, setLocationStatus] = useState('');
@@ -2778,7 +2779,7 @@ function App() {
     if (!sharedPackage && sharedStatus) {
       return <main className="recipient-shell"><section className="recipient-loading error"><AlertTriangle size={18}/> {sharedStatus}</section></main>;
     }
-    return <main className="recipient-shell shared-object-only">
+    return <main className={`recipient-shell shared-object-only ${recipientEditOpen ? 'recipient-editing-active' : ''}`}>
       {!sharedCoverDismissed && <button type="button" className={`shared-screenshot-cover ${sharedCoverFading ? 'fade-out' : ''}`} onClick={openSharedReminderFromScreenshot} aria-label="Open shared reminder file">
         <span className="screenshot-device-bar"><span></span><span></span><span></span></span>
         <span className="screenshot-card-preview" data-share-token={sharedPackage.token}>
@@ -2799,21 +2800,16 @@ function App() {
           onLocationShared={saveSharedLocationUpdate}
           sharedSummary={lastSharedSummary}
           sharedMeta={lastSharedMeta}
-          onEdit={async () => {
-            if (recipientEditOpen) {
-              await saveSharedChanges();
-              setRecipientEditOpen(false);
-              setPreviewLocationToolsOpen(false);
-            } else {
-              setForm(activeReminder);
-              setRecipientEditOpen(true);
-            }
+          onEdit={() => {
+            setForm(activeReminder);
+            setRecipientEditOpen(true);
+            setRecipientPreviewMode(false);
           }}
           onForward={() => {}}
           previewRecipients={previewRecipients}
           showRecipients={showRecipientsInPreview}
           onToggleRecipients={() => setShowRecipientsInPreview(value => !value)}
-          editMode={recipientEditOpen}
+          editMode={recipientEditOpen && !recipientPreviewMode}
           editDate={form.date}
           editTime={form.time}
           onEditDate={value => setField('date', value)}
@@ -2830,6 +2826,18 @@ function App() {
           locationStatus={locationStatus}
         />
       </section>
+      {recipientEditOpen && <div className="recipient-edit-bottom-bar" role="group" aria-label="Shared reminder edit actions">
+        <button type="button" className="secondary recipient-preview-action" onClick={() => {
+          setRecipientPreviewMode(value => !value);
+          setPreviewLocationToolsOpen(false);
+        }}>{recipientPreviewMode ? 'Back' : 'Preview'}</button>
+        <button type="button" className="primary recipient-save-action" onClick={async () => {
+          await saveSharedChanges();
+          setRecipientEditOpen(false);
+          setRecipientPreviewMode(false);
+          setPreviewLocationToolsOpen(false);
+        }} disabled={!formValid}>Save</button>
+      </div>}
       {sharedStatus && <p className="recipient-shared-status">{sharedStatus}</p>}
     </main>;
   }

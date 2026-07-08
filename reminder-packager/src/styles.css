@@ -1516,3 +1516,30 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
   .recipient-shell .preview-edit-schedule{grid-template-columns:1fr;gap:8px}
   .recipient-shell .recipient-title-inline{font-size:22px;min-height:68px}
 }
+/* Recipient edit bottom action bar: preview unsaved changes, then save shared edits. */
+.recipient-shell.shared-object-only.recipient-editing-active{
+  padding-bottom:112px;
+}
+.recipient-edit-bottom-bar{
+  position:fixed;left:50%;bottom:max(12px, env(safe-area-inset-bottom));
+  transform:translateX(-50%);z-index:1200;
+  width:min(392px,calc(100vw - 24px));
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  padding:12px;border-radius:26px;
+  background:rgba(255,255,255,.96);
+  border:1px solid rgba(226,232,240,.96);
+  box-shadow:0 18px 48px rgba(15,23,42,.24);
+  backdrop-filter:blur(16px);
+}
+.recipient-edit-bottom-bar button{
+  min-height:52px;border-radius:18px;font-size:16px;font-weight:950;
+}
+.recipient-edit-bottom-bar .recipient-save-action:disabled{
+  opacity:.55;cursor:not-allowed;box-shadow:none;
+}
+.recipient-shell .inline-actions-under-calendar:empty{display:none}
+@media(max-width:420px){
+  .recipient-shell.shared-object-only.recipient-editing-active{padding-bottom:106px}
+  .recipient-edit-bottom-bar{width:calc(100vw - 18px);gap:10px;padding:10px;border-radius:24px}
+  .recipient-edit-bottom-bar button{min-height:50px;border-radius:16px;font-size:15px}
+}
