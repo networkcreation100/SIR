@@ -62,27 +62,30 @@ export function ContactSupportPopup({ onClose }) {
   const [status, setStatus] = useState('');
   function submit(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
     const subject = String(form.get('subject') || '').trim();
-    const email = String(form.get('email') || '').trim();
+    const name = String(form.get('name') || '').trim();
     const message = String(form.get('message') || '').trim();
-    if (!subject || !email || !message || !email.includes('@')) {
-      setStatus('Please add a subject, valid email, and message.');
+    if (!subject || !name || !message) {
+      setStatus('Please add a subject, your name, and a message.');
       return;
     }
     const supportRecipient = 'network.creation@outlook.com';
     const mailSubject = `SIR support request: ${subject}`;
-    const mailBody = `Sender email: ${email}\n\nSubject: ${subject}\n\nMessage:\n${message}`;
+    const mailBody = `From: ${name}\n\nSubject: ${subject}\n\nMessage:\n${message}`;
     const mailtoUrl = `mailto:${encodeURIComponent(supportRecipient)}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
     window.open(mailtoUrl, '_blank', 'noopener,noreferrer');
-    setStatus('Support message ready. Your email app opened with the request prepared.');
+    // Clear the form fields and close Contact Support after submitting.
+    try { formEl.reset(); } catch (_) {}
+    onClose();
   }
   return <div className="settings-modal-backdrop contact-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="settings-modal contact-modal" role="dialog" aria-modal="true" aria-label="Contact Support">
       <div className="settings-modal-gradient-header contact-header"><MessageCircle size={24}/><h2>Contact Support</h2><button type="button" onClick={onClose} aria-label="Close contact support"><X size={18}/></button></div>
       <form className="support-form" onSubmit={submit}>
         <label>Subject<input name="subject" placeholder="Brief description of your issue..." /></label>
-        <label>Your Email<span className="input-with-icon"><Mail size={17}/><input name="email" type="email" placeholder="Your contact email..." /></span></label>
+        <label>Your Name<span className="input-with-icon"><Mail size={17}/><input name="name" type="text" autoComplete="name" placeholder="Your name..." /></span></label>
         <label>Message<textarea name="message" placeholder="Please describe your issue in detail..." /></label>
         {status && <p className="settings-form-status support-status" role="status" aria-live="polite">{status}</p>}
         <div className="modal-button-row support-actions"><button type="button" className="support-cancel" onClick={onClose}>Cancel</button><button type="submit" className="support-submit"><Send size={18}/> Send Message</button></div>

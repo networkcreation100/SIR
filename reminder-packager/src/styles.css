@@ -1621,3 +1621,29 @@ body.sir-send-collapsed{overflow-y:auto;}
   .premium-modal .premium-cancel,
   .premium-modal .donate-submit { min-height: 44px !important; height: 44px !important; border-radius: 11px !important; }
 }
+
+/* ============================================================
+   Contact Support — center on screen (was pinned to top on
+   mobile via .settings-modal-backdrop{align-items:flex-start})
+   and keep it fully on one screen.
+   ============================================================ */
+.contact-backdrop { align-items: center !important; }
+@media (max-width: 640px) {
+  .contact-backdrop { align-items: center !important; padding: 12px !important; overflow: hidden !important; }
+  .contact-modal {
+    width: 100% !important;
+    max-height: 100dvh !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .contact-modal .contact-header { flex: 0 0 auto !important; }
+  .contact-modal .support-form {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+    padding: 20px 20px 18px !important;
+    gap: 14px !important;
+  }
+  .contact-modal .support-form textarea { min-height: 110px !important; }
+  .contact-modal .support-actions { flex: 0 0 auto !important; margin-top: 4px !important; }
+}
