@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+android/app/build/
+android/build/
+android/.gradle/
+ios/App/build/
+*.aab
+*.apk
+
+# Debug / test artifacts (Playwright screenshots & one-off audit scripts)
+scripts/*.png
+scripts/*-audit.mjs
+scripts/*-debug.mjs
+scripts/smoke-test.mjs
+scripts/tunnel-debug.mjs
+audit-*.mjs
+*.log
+
+# Local secrets & signing (never commit)
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+android/keystore.properties
+android/key.properties
+
+# OS junk
+.DS_Store
+Thumbs.db
