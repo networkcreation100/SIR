@@ -1,14 +1,18 @@
 {
-  "latestVersion": "1.0.10",
-  "message": "Send reliability and blank-card date/time styling improvements are ready.",
+  "latestVersion": "1.0.11",
+  "message": "A new SIR update is ready to download.",
   "downloadUrls": {
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "web": "https://networkcreation100.github.io/SIR/"
   },
-  "releaseNotes": "Fixes native Send confirmation freezing during notification scheduling and makes blank-card date/time appear inactive gray until content is entered.",
-  "updatedAt": "2026-07-09T07:51:00-10:00",
+  "releaseNotes": [
+    "Send no longer freezes on the notification step — delivery always completes",
+    "Sending reminder confirmation always reaches a dismissible Done state",
+    "Blank card date/time stays gray until you set it by voice or editing",
+    "Updated mic prompt: Tap the Mic to speak the date, time, and location"
+  ],
+  "updatedAt": "2026-07-09T22:59:00Z",
   "releaseDate": "2026-07-09",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
-  "webUrl": "https://networkcreation100.github.io/SIR/",
-  "title": "SIR update available"
+  "webUrl": "https://networkcreation100.github.io/SIR/"
 }

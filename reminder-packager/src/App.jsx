@@ -21,7 +21,7 @@ const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRou
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.8').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.11').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -349,7 +349,8 @@ const initialReminder = { ...normalizeReminder({
   notes: '',
   sender: 'Networkcreation',
   locationPin: null,
-  urgencySelected: false
+  urgencySelected: false,
+  scheduleTouched: false
 }), title: '', location: '', urgencySelected: false };
 
 const BACKGROUND_BLANK_REMINDER_ID = 'sir-preview-background-blank';
@@ -1488,6 +1489,10 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     reminder.sentAt
   );
   const isBlankCard = compactMode && !recipientMode && !cardHasUserInput;
+  // Date/time pill stays visually inactive (gray) until the schedule value is
+  // actually changed by the user via voice input or manual text editing.
+  const scheduleTouched = Boolean(reminder.scheduleTouched) || Boolean(String(compactVoiceTranscript || '').trim());
+  const scheduleIsDefault = compactMode && !recipientMode && !scheduleTouched;
   const noLocationSet = isLocationUnset(reminder.location);
   const locationLabel = noLocationSet ? 'No location set' : compactAddress(reminder.location);
   const dueLabel = noLocationSet && !recipientMode ? formatDueForPreviewTimezone(reminder, previewTimezone) : formatDue(reminder);
@@ -1523,9 +1528,9 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
       {!editMode && <span className="voice-star-wrap"><Sparkles size={15}/></span>}
-      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle ? editText : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim()) ? reminder.title : 'Speak to automatically display the date, time, and location.')))}</span>}
+      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle ? editText : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim()) ? reminder.title : 'Tap the Mic to speak the date, time, and location')))}</span>}
     </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className="preview-title">{reminder.title}</h3>}
-    <div className={`due ${status.tone}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
+    <div className={`due ${status.tone} ${scheduleIsDefault ? 'schedule-default' : ''} ${scheduleTouched ? 'schedule-active' : ''}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
     {editMode && <div className="preview-edit-schedule">
       <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
       <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
@@ -2193,17 +2198,22 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       preGeneratedCardRef.current = { key: prepared.key, promise: null, result: preparedResult, error: null };
       setSmartCardStatus('ready');
       setShareUrl(url);
-      reportProgress({ phase: 'notification', pending: true, etaSeconds: 2, statusText: 'Card generated. Scheduling reminder notification…' });
-      // Schedule a local notification 15 minutes before the meeting/appointment time (native only).
+      reportProgress({ phase: 'notification', pending: true, etaSeconds: 1, statusText: 'Card generated. Scheduling reminder notification…' });
+      // Schedule a local notification 15 minutes before the meeting/appointment
+      // time (native only). This is FIRE-AND-FORGET on purpose: a hanging native
+      // permission/schedule bridge must never block Send from completing. The
+      // helper already guards every native call with its own ~1.4s timeout, but
+      // we also do not await it here so the delivery link and the dismissible
+      // confirmation always appear even if the OS stalls the notification.
       try {
-        await scheduleReminderNotification({
+        Promise.resolve(scheduleReminderNotification({
           id: token,
           share_token: token,
           title: sharedReminder.title,
           date: sharedReminder.date,
           time: sharedReminder.time,
           location: sharedReminder.location
-        });
+        })).catch(() => {});
       } catch (notifyErr) { /* non-fatal: notifications are best-effort */ }
       reportProgress({ phase: 'delivery', pending: true, statusText: 'Finalizing delivery link…' });
 
@@ -2375,7 +2385,7 @@ function App() {
       const normalized = normalizeReminder(item);
       if (!cards.some(card => card.id === normalized.id || sameReminderCard(card, normalized))) cards.push(normalized);
     });
-    const blankBackgroundCard = { ...initialReminder, id: BACKGROUND_BLANK_REMINDER_ID, title: '', location: '', locationPin: null, sharedLocations: [], notes: '', urgency: 'low', urgencySelected: false };
+    const blankBackgroundCard = { ...initialReminder, id: BACKGROUND_BLANK_REMINDER_ID, title: '', location: '', locationPin: null, sharedLocations: [], notes: '', urgency: 'low', urgencySelected: false, scheduleTouched: false };
     if (!cards.some(card => card.id === BACKGROUND_BLANK_REMINDER_ID) && !cards.some(isBlankPreviewCard)) cards.push(blankBackgroundCard);
     return cards.slice(0, 7);
   }, [activeReminder, reminders]);
@@ -2676,6 +2686,7 @@ function App() {
         setLocationStatus('');
       }
       if (field === 'urgency') next.urgencySelected = true;
+      if (field === 'date' || field === 'time') next.scheduleTouched = true;
       if (field === 'title') {
         const lower = value.toLowerCase();
         if ((lower.includes('call') || lower.includes('zoom') || lower.includes('meeting')) && ['Video call / online link', 'Online meeting link'].includes(prev.location)) next.location = 'Video call / online link';
@@ -2785,6 +2796,7 @@ function App() {
       title: parsed.title || prev.title,
       date: parsed.date || prev.date,
       time: parsed.time || prev.time,
+      scheduleTouched: prev.scheduleTouched || Boolean(parsed.date || parsed.time),
       location: parsed.location && !namedPlace ? parsed.location : prev.location,
       locationPin: parsed.location && !namedPlace ? null : prev.locationPin
     }));
@@ -3062,7 +3074,7 @@ function App() {
   }
 
   function makeFreshBlankReminder() {
-    return { ...initialReminder, id: createReminderId(), title: '', location: '', locationPin: null, sharedLocations: [], notes: '', date: '', time: '', sentAt: null, recipients: [] };
+    return { ...initialReminder, id: createReminderId(), title: '', location: '', locationPin: null, sharedLocations: [], notes: '', date: '', time: '', sentAt: null, recipients: [], scheduleTouched: false };
   }
 
   // Called once the shared reminder has been created on the server (from RecipientPanel).
@@ -3093,6 +3105,26 @@ function App() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [sentConfirmation?.pending, sentConfirmation?.error]);
+
+  // Fail-safe: never leave the Send confirmation stuck on the pending spinner.
+  // If it stays pending past ~7s (delivery/notify step stalled by the OS), flip
+  // it to the dismissible sent state so the user can close it and continue.
+  useEffect(() => {
+    if (!sentConfirmation?.pending || sentConfirmation.error) return;
+    const failSafe = window.setTimeout(() => {
+      setSentConfirmation(prev => {
+        if (!prev?.pending || prev.error) return prev;
+        return {
+          ...prev,
+          phase: 'sent',
+          pending: false,
+          etaSeconds: 0,
+          statusText: prev.statusText || 'Reminder card ready. Delivery link is prepared.'
+        };
+      });
+    }, 7000);
+    return () => window.clearTimeout(failSafe);
+  }, [sentConfirmation?.pending, sentConfirmation?.error, sentConfirmation?.pendingStartedAt]);
 
   function placeSentCardBehindFreshBlank(sentReminder) {
     const stamped = normalizeReminder({ ...sentReminder, sentAt: sentReminder.sentAt || new Date().toISOString() });

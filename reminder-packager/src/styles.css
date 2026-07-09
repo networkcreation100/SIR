@@ -2077,15 +2077,31 @@ body.sir-send-collapsed{overflow-y:auto;}
 
 
 /* Blank compact card: keep auto-filled date/time visually inactive until the user adds content. */
-.reminder-card.simplified-preview.blank-card .due{
+.reminder-card.simplified-preview.blank-card .due:not(.schedule-active){
   border-color:#d1d5db!important;
   background:#f3f4f6!important;
   color:#6b7280!important;
   box-shadow:none!important;
 }
-.reminder-card.simplified-preview.blank-card .due span,
-.reminder-card.simplified-preview.blank-card .due b,
-.reminder-card.simplified-preview.blank-card .due svg,
-.reminder-card.simplified-preview.blank-card .due .preview-importance{
+.reminder-card.simplified-preview.blank-card .due:not(.schedule-active) span,
+.reminder-card.simplified-preview.blank-card .due:not(.schedule-active) b,
+.reminder-card.simplified-preview.blank-card .due:not(.schedule-active) svg,
+.reminder-card.simplified-preview.blank-card .due:not(.schedule-active) .preview-importance{
+  color:#6b7280!important;
+}
+
+/* Date/time pill stays gray by default and only turns active once the schedule
+   value is changed through voice input or text editing (independent of the rest
+   of the card being blank). */
+.reminder-card.simplified-preview .due.schedule-default{
+  border-color:#d1d5db!important;
+  background:#f3f4f6!important;
+  color:#6b7280!important;
+  box-shadow:none!important;
+}
+.reminder-card.simplified-preview .due.schedule-default span,
+.reminder-card.simplified-preview .due.schedule-default b,
+.reminder-card.simplified-preview .due.schedule-default svg,
+.reminder-card.simplified-preview .due.schedule-default .preview-importance{
   color:#6b7280!important;
 }
