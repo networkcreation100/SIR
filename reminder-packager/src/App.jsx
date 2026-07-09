@@ -5,7 +5,7 @@ import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronL
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
 import { getEmailValidationError, isEmail, isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows } from './recipientUtils.js';
 import { startNativeSpeech, isNativePlatform } from './nativeSpeech.js';
-import { scheduleReminderNotification, ensureNotifyPermission, syncAppBadge } from './nativeNotify.js';
+import { scheduleReminderNotification, ensureNotifyPermission, syncAppBadge, notifyAppUpdateAvailable } from './nativeNotify.js';
 
 const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
@@ -21,6 +21,61 @@ const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRou
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.7').replace(/^v/i, '');
+const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
+const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
+const DEFAULT_IOS_DOWNLOAD_URL = '';
+
+function compareAppVersions(a, b) {
+  const parse = value => String(value || '').replace(/^v/i, '').split(/[+-]/)[0].split('.').map(part => Number.parseInt(part, 10) || 0);
+  const left = parse(a);
+  const right = parse(b);
+  const len = Math.max(left.length, right.length, 3);
+  for (let i = 0; i < len; i += 1) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+function deviceDownloadUrl(manifest = {}) {
+  const urls = manifest.downloadUrls || manifest.download_urls || {};
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  if (/iphone|ipad|ipod/i.test(ua)) return urls.ios || manifest.iosDownloadUrl || DEFAULT_IOS_DOWNLOAD_URL || urls.android || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
+  if (/android/i.test(ua)) return urls.android || manifest.androidDownloadUrl || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
+  return urls.web || manifest.webDownloadUrl || urls.android || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
+}
+
+function localUpdateManifestUrl() {
+  try { return new URL('sir-update.json', window.location.href).toString(); } catch { return '/sir-update.json'; }
+}
+
+async function fetchUpdateManifest() {
+  const candidates = [];
+  try {
+    if (!isInternalAppOrigin()) candidates.push(localUpdateManifestUrl());
+  } catch {}
+  candidates.push(UPDATE_MANIFEST_REMOTE_URL);
+  const seen = new Set();
+  for (const url of candidates) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    try {
+      const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data && (data.latestVersion || data.version)) return data;
+    } catch {}
+  }
+  return null;
+}
+
+function isForceUpdateAlertEnabled() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    return params.has('forceUpdateAlert') || params.has('sir_update_test') || window.localStorage.getItem('sir:force-update-alert') === '1';
+  } catch { return false; }
+}
 
 function isInternalAppOrigin() {
   try {
@@ -1486,7 +1541,10 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
         {onToggleRecipients && <button type="button" className="ghost recipient-visibility" onClick={onToggleRecipients}>Hide</button>}
       </div>}
     </div>}
-    {compactMode && !recipientMode ? (reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)) : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
+    {compactMode && !recipientMode ? <>
+      {reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)}
+      <p className="card-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</p>
+    </> : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
   </article>;
 }
 
@@ -1815,7 +1873,42 @@ function buildComposeConfirmationMessage(channel, contacts) {
   return `Confirmation: ${label} opened for ${listContacts(contacts)}. Delivery is pending until you press Send in that app.`;
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent }) {
+function openDeliveryLinkAfterConfirmation(href) {
+  if (!href || typeof window === 'undefined') return;
+  const openLink = () => {
+    try { window.location.href = href; } catch { /* external scheme unavailable */ }
+  };
+  let mobileLike = false;
+  try {
+    const ua = navigator.userAgent || '';
+    mobileLike = window.innerWidth <= 768 || navigator.maxTouchPoints > 0 || /android|iphone|ipad|ipod/i.test(ua);
+  } catch { mobileLike = false; }
+  if (!mobileLike) {
+    window.setTimeout(openLink, 0);
+    return;
+  }
+
+  // On real phones, opening sms:/mailto: immediately can steal focus before
+  // React paints the web-style “Reminder sent” modal. Mobile now waits until
+  // the modal has appeared and the user dismisses it, then opens the delivery
+  // app. This keeps the visible flow identical to web: confirmation first,
+  // blank card on top, sent card behind the deck.
+  const startedAt = Date.now();
+  let sawConfirmation = false;
+  const waitForDismissal = () => {
+    const confirmationVisible = !!document.querySelector('.sent-confirm-backdrop');
+    sawConfirmation = sawConfirmation || confirmationVisible;
+    if (sawConfirmation && !confirmationVisible) {
+      openLink();
+      return;
+    }
+    if (Date.now() - startedAt > 120000) return;
+    window.setTimeout(waitForDismissal, 120);
+  };
+  window.setTimeout(waitForDismissal, 40);
+}
+
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendProgress }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -1982,9 +2075,22 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
 
     const deliveryRecipients = recipients;
     const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
-    setMessage('Creating independent shared reminder file on the server…');
+    const reportProgress = update => {
+      try {
+        onSendProgress && onSendProgress({
+          title: reminder.title,
+          recipients: displayRecipients,
+          sentAt: new Date().toISOString(),
+          ...update
+        });
+      } catch (_) { /* ignore progress UI errors */ }
+    };
+    reportProgress({ phase: 'preparing', pending: true, statusText: 'Preparing reminder card details…' });
+    setMessage('Preparing reminder card details…');
     try {
       const payload = normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' });
+      reportProgress({ phase: 'server-generating', pending: true, statusText: 'Generating shared card on the server…' });
+      setMessage('Generating shared card on the server…');
       const saved = await reminderSync({
         action: 'save',
         editor: reminder.sender || 'sender',
@@ -1992,11 +2098,13 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
         recipients: deliveryRecipients,
         payload
       });
+      reportProgress({ phase: 'server-generated', pending: true, statusText: 'Server card generated. Creating secure share link…' });
       const token = saved.share_token || saved.reminder?.share_token;
       const url = buildShareUrl(token);
       const savedVersion = Number(saved.reminder?.version || saved.version || payload.version || 1);
       let sharedReminder = { ...payload, share_token: token, shareUrl: url, version: savedVersion };
       setShareUrl(url);
+      reportProgress({ phase: 'notification', pending: true, statusText: 'Card generated. Scheduling reminder notification…' });
       // Schedule a local notification 15 minutes before the meeting/appointment time (native only).
       try {
         await scheduleReminderNotification({
@@ -2008,6 +2116,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
           location: sharedReminder.location
         });
       } catch (notifyErr) { /* non-fatal: notifications are best-effort */ }
+      reportProgress({ phase: 'delivery', pending: true, statusText: 'Finalizing delivery link…' });
 
       // Stamp the sent time and hand the sent reminder back to the parent so it can
       // move this card to the back of the stack and surface a confirmation screen.
@@ -2017,17 +2126,19 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       if (phones.length) {
         if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails));
         setMessage(`${buildComposeConfirmationMessage('text', phones)}${emails.length ? ' Email recipient also recognized — open email after the text app if needed.' : ''}`);
-        window.location.href = createSmsLink(sharedReminder, phones);
+        openDeliveryLinkAfterConfirmation(createSmsLink(sharedReminder, phones));
         return;
       }
 
       if (emails.length) {
         setMessage(buildComposeConfirmationMessage('email', emails));
-        window.location.href = createMailto(sharedReminder, emails);
+        openDeliveryLinkAfterConfirmation(createMailto(sharedReminder, emails));
         return;
       }
     } catch (error) {
-      setMessage(error.message || 'Could not create the shared reminder file.');
+      const errorMessage = error.message || 'Could not create the shared reminder file.';
+      setMessage(errorMessage);
+      try { onSendProgress && onSendProgress({ title: reminder.title, recipients: displayRecipients, sentAt: new Date().toISOString(), phase: 'error', pending: false, error: true, statusText: errorMessage }); } catch (_) {}
     }
   }
 
@@ -2068,6 +2179,7 @@ function App() {
   const [sendOpen, setSendOpen] = useState(false);
   const [sendCollapsed, setSendCollapsed] = useState(false);
   const [sentConfirmation, setSentConfirmation] = useState(null);
+  const [updateAlert, setUpdateAlert] = useState(null);
   // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
   // the preview card underneath gets bottom padding and can scroll fully clear
   // of the fixed bar (mirrors the recipient-edit bottom-bar behavior).
@@ -2076,6 +2188,48 @@ function App() {
     document.body.classList.toggle('sir-send-collapsed', active);
     return () => document.body.classList.remove('sir-send-collapsed');
   }, [sendOpen, sendCollapsed]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkForUpdate() {
+      const force = isForceUpdateAlertEnabled();
+      const manifest = force ? {
+        latestVersion: '99.0.0',
+        title: 'SIR update available',
+        message: 'A new SIR update is ready to download.',
+        downloadUrl: DEFAULT_ANDROID_DOWNLOAD_URL,
+        forceTest: true
+      } : await fetchUpdateManifest();
+      if (cancelled || !manifest) return;
+      const latestVersion = String(manifest.latestVersion || manifest.version || '').replace(/^v/i, '');
+      if (!latestVersion) return;
+      if (!force && compareAppVersions(latestVersion, CURRENT_APP_VERSION) <= 0) return;
+      const dismissedVersion = window.localStorage.getItem('sir:update-alert-dismissed-version');
+      if (!force && dismissedVersion === latestVersion) return;
+      const info = {
+        latestVersion,
+        currentVersion: CURRENT_APP_VERSION,
+        title: manifest.title || 'SIR update available',
+        message: manifest.message || `Version ${latestVersion} is ready to download.`,
+        downloadUrl: deviceDownloadUrl(manifest),
+        releaseNotes: manifest.releaseNotes || manifest.notes || '',
+        forceTest: !!manifest.forceTest
+      };
+      setUpdateAlert(info);
+      try {
+        const notifiedKey = `sir:update-alert-notified:${latestVersion}`;
+        if (force || window.localStorage.getItem(notifiedKey) !== '1') {
+          notifyAppUpdateAvailable(info).catch(() => {});
+          if (!force) window.localStorage.setItem(notifiedKey, '1');
+        }
+      } catch {}
+    }
+    checkForUpdate();
+    const timer = window.setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') checkForUpdate(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { cancelled = true; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
   // Standard-mode mobile stacked-steps front card: 1=Create, 2=Preview, 3=Send. Default Preview on top.
   const [stepFront, setStepFront] = useState(2);
   const [reviewTabsReady, setReviewTabsReady] = useState(false);
@@ -2816,6 +2970,18 @@ function App() {
   // Called once the shared reminder has been created on the server (from RecipientPanel).
   // Stamps the sent card, moves it to the BACK of the preview stack, resets the composer
   // to a fresh blank Preview card at the front, and surfaces the confirmation screen.
+  function handleSendProgress(progress = {}) {
+    setSentConfirmation(prev => ({
+      title: progress.title || prev?.title || activeReminder.title,
+      recipients: Array.isArray(progress.recipients) ? progress.recipients : (prev?.recipients || []),
+      sentAt: progress.sentAt || prev?.sentAt || new Date().toISOString(),
+      phase: progress.phase || prev?.phase || 'preparing',
+      statusText: progress.statusText || prev?.statusText || 'Preparing reminder card…',
+      pending: progress.pending !== false && !progress.error,
+      error: !!progress.error
+    }));
+  }
+
   function handleReminderSent(sentReminder) {
     const stamped = normalizeReminder({ ...sentReminder, sentAt: sentReminder.sentAt || new Date().toISOString() });
     const blankReminder = makeFreshBlankReminder();
@@ -2844,7 +3010,11 @@ function App() {
     setSentConfirmation({
       title: stamped.title,
       recipients: Array.isArray(stamped.recipients) ? stamped.recipients : [],
-      sentAt: stamped.sentAt
+      sentAt: stamped.sentAt,
+      phase: 'sent',
+      statusText: 'Server card generated and delivery link ready.',
+      pending: false,
+      error: false
     });
   }
   function downloadPackage() {
@@ -2935,12 +3105,23 @@ function App() {
   }
 
   return <main className="app-shell">
+    {updateAlert && <div className="update-notification-card" role="status" aria-live="polite">
+      <div className="update-notification-icon"><Bell size={18}/><span className="update-notification-badge">1</span></div>
+      <div className="update-notification-copy">
+        <strong>{updateAlert.title}</strong>
+        <span>{updateAlert.message}</span>
+        <small>Installed: {updateAlert.currentVersion} · Available: {updateAlert.latestVersion}</small>
+      </div>
+      <div className="update-notification-actions">
+        {updateAlert.downloadUrl && <button type="button" className="update-notification-download" onClick={() => { window.location.href = updateAlert.downloadUrl; }}>Download</button>}
+        <button type="button" className="update-notification-close" aria-label="Dismiss update notification" onClick={() => { try { if (!updateAlert.forceTest) window.localStorage.setItem('sir:update-alert-dismissed-version', updateAlert.latestVersion); } catch {} setUpdateAlert(null); }}><X size={15}/></button>
+      </div>
+    </div>}
     <section className="hero app-settings-hero">
       <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1></div>
       <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : 'Open app settings'} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/></button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
         <div className="settings-menu-head"><strong>Menu</strong><button type="button" className="settings-menu-close" aria-label="Close menu" onClick={() => setAppSettingsOpen(false)}><X size={16}/></button></div>
         <div className="settings-menu-group"><span>Account & support</span>
-          <button type="button" role="menuitem" className="settings-card privacy-card" onClick={() => { setSettingsPopup('privacy'); setAppSettingsOpen(false); }}><span className="settings-card-icon"><ShieldCheck size={18}/></span><span><strong>Privacy &amp; Data</strong><small>Data use and protection</small></span></button>
           <button type="button" role="menuitem" className="settings-card support-card" onClick={() => { setSettingsPopup('support'); setAppSettingsOpen(false); }}><span className="settings-card-icon"><MessageCircle size={18}/></span><span><strong>Help &amp; Support</strong><small>Send a help request</small></span></button>
         </div>
         <div className="settings-menu-group">
@@ -3010,23 +3191,25 @@ function App() {
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} />
+        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendProgress={handleSendProgress} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} />
+        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendProgress={handleSendProgress} />
       </div>
     </div>}
-    {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label="Reminder sent" onClick={() => setSentConfirmation(null)}>
-      <div className="sent-confirm-card" onClick={e => e.stopPropagation()}>
-        <div className="sent-confirm-check"><CheckCircle2 size={44} /></div>
-        <h2>Reminder sent</h2>
+    {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label={sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Reminder send error' : 'Reminder sent'} onClick={() => { if (!sentConfirmation.pending) setSentConfirmation(null); }}>
+      <div className={`sent-confirm-card ${sentConfirmation.pending ? 'pending' : ''} ${sentConfirmation.error ? 'error' : ''}`} onClick={e => e.stopPropagation()}>
+        <div className={`sent-confirm-check ${sentConfirmation.pending ? 'pending' : ''} ${sentConfirmation.error ? 'error' : ''}`}>{sentConfirmation.pending ? <RefreshCw size={42} /> : sentConfirmation.error ? <AlertTriangle size={42} /> : <CheckCircle2 size={44} />}</div>
+        <h2>{sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Couldn’t send reminder' : 'Reminder sent'}</h2>
         <p className="sent-confirm-title">{sentConfirmation.title && sentConfirmation.title !== 'Untitled Reminder' ? sentConfirmation.title : 'Your reminder'}</p>
-        {sentConfirmation.recipients?.length > 0 && <p className="sent-confirm-recipients">Sent to {sentConfirmation.recipients.join(', ')}</p>}
-        <p className="sent-confirm-time">{formatSentStamp(sentConfirmation.sentAt)}</p>
-        <p className="sent-confirm-hint">This reminder moved to the back of your cards. Use the navigation to review it.</p>
-        <button type="button" className="primary full sent-confirm-done" onClick={() => setSentConfirmation(null)}>Done</button>
+        {sentConfirmation.recipients?.length > 0 && <p className="sent-confirm-recipients">{sentConfirmation.pending ? 'Sending to' : sentConfirmation.error ? 'Attempted for' : 'Sent to'} {sentConfirmation.recipients.join(', ')}</p>}
+        {sentConfirmation.statusText && <p className="sent-confirm-status" role="status" aria-live="polite">{sentConfirmation.statusText}</p>}
+        {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-time">{formatSentStamp(sentConfirmation.sentAt)}</p>}
+        {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-hint">This reminder moved to the back of your cards. Use the navigation to review it.</p>}
+        {sentConfirmation.pending && <div className="sent-progress-steps" aria-label="Send progress"><span className={['preparing','server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Preparing</span><span className={['server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Server</span><span className={['notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Notify</span><span className={sentConfirmation.phase === 'delivery' ? 'active' : ''}>Link</span></div>}
+        {!sentConfirmation.pending && <button type="button" className="primary full sent-confirm-done" onClick={() => setSentConfirmation(null)}>{sentConfirmation.error ? 'Done' : 'Done'}</button>}
       </div>
     </div>}
   </main>;

@@ -164,3 +164,34 @@ export async function syncAppBadge() {
   if (!plugin) return 0;
   return refreshBadgeCount(plugin);
 }
+
+
+// Fire an immediate native notification when a newer app update is available.
+// Web/PWA safely no-ops via loadPlugin(), matching the reminder notification flow.
+export async function notifyAppUpdateAvailable(updateInfo = {}) {
+  const plugin = await loadPlugin();
+  if (!plugin) return { sent: false, reason: 'not-native' };
+  const granted = await ensureNotifyPermission();
+  if (!granted) return { sent: false, reason: 'no-permission' };
+  const version = String(updateInfo.latestVersion || updateInfo.version || 'new');
+  const id = notifId(`sir-update-${version}`);
+  const title = updateInfo.title || 'SIR update available';
+  const body = updateInfo.message || `Version ${version} is ready to download.`;
+  try {
+    try { await plugin.cancel({ notifications: [{ id }] }); } catch {}
+    await plugin.schedule({
+      notifications: [{
+        id,
+        title,
+        body,
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+        smallIcon: 'ic_launcher_foreground',
+        iconColor: '#dc2626',
+        extra: { type: 'app-update', version, downloadUrl: updateInfo.downloadUrl || '' }
+      }]
+    });
+    return { sent: true, id };
+  } catch (err) {
+    return { sent: false, reason: 'schedule-error', error: String(err) };
+  }
+}

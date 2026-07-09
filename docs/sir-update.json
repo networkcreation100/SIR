@@ -1,0 +1,10 @@
+{
+  "latestVersion": "1.0.8",
+  "message": "A new SIR update is ready to download.",
+  "downloadUrls": {
+    "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
+    "web": "https://networkcreation100.github.io/SIR/"
+  },
+  "releaseNotes": "v1.0.8 adds immediate Send progress confirmation, a compact update notification badge, card-expiry notes, and recent mobile/microphone/shared-card refinements.",
+  "updatedAt": "2026-07-09T07:52:00Z"
+}

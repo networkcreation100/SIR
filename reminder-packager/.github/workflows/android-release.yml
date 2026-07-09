@@ -52,7 +52,7 @@ jobs:
           cache: npm
           cache-dependency-path: reminder-packager/package-lock.json
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -63,29 +63,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Build web app
-        run: npm run build
-
-      - name: Capacitor sync (android)
-        run: npx cap sync android
-
-      - name: Decode upload keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/sir-upload.jks
-          if [ ! -s android/app/sir-upload.jks ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty."
-            exit 1
-          fi
-
-      - name: Write key.properties
-        run: |
-          cat > android/key.properties <<EOF
-          storeFile=sir-upload.jks
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          EOF
 
       - name: Resolve version fields
         id: ver
@@ -99,6 +76,66 @@ jobs:
             echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build web app
+        env:
+          VITE_SIR_APP_VERSION: ${{ steps.ver.outputs.name }}
+        run: npm run build
+
+      - name: Capacitor sync (android)
+        run: npx cap sync android
+
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, re, sys
+          raw = os.environ.get('ANDROID_KEYSTORE_BASE64_VALUE', '')
+          clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
+          if not clean:
+              print('::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty.')
+              sys.exit(1)
+          # Windows/Notepad/GitHub copy-paste can drop or alter trailing padding.
+          # Re-pad to the nearest valid base64 length before decoding.
+          clean += '=' * ((4 - len(clean) % 4) % 4)
+          try:
+              data = base64.b64decode(clean, validate=False)
+          except Exception as exc:
+              print(f'::error::ANDROID_KEYSTORE_BASE64 is not valid base64 after cleanup/padding repair: {exc}')
+              sys.exit(1)
+          os.makedirs('android/app', exist_ok=True)
+          with open('android/app/sir-upload.jks', 'wb') as f:
+              f.write(data)
+          if len(data) < 1000:
+              print('::error::Decoded keystore is unexpectedly small. Please re-copy the full sir-upload.jks.base64.txt value.')
+              sys.exit(1)
+          print(f'Decoded upload keystore ({len(data)} bytes).')
+          PY
+
+      - name: Write key.properties
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=sir-upload.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Validate keystore credentials
+        run: |
+          echo "Verifying keystore alias + password match the provided secrets..."
+          if keytool -list -keystore android/app/sir-upload.jks \
+               -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+               -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /tmp/ksout.txt 2>&1; then
+            echo "✅ Keystore opens with the given store password and alias '${{ secrets.ANDROID_KEY_ALIAS }}'."
+          else
+            echo "::error::Keystore validation FAILED. The ANDROID_KEYSTORE_PASSWORD and/or ANDROID_KEY_ALIAS secret does not match the keystore."
+            echo "----- keytool output -----"
+            cat /tmp/ksout.txt
+            echo "Expected alias per make-keystore.ps1: sir-upload (store password == key password)."
+            exit 1
+          fi
+
       - name: Build signed AAB
         run: |
           cd android
@@ -106,7 +143,7 @@ jobs:
           ./gradlew bundleRelease \
             -PsirVersionName=${{ steps.ver.outputs.name }} \
             -PsirVersionCode=${{ steps.ver.outputs.code }} \
-            --no-daemon
+            --no-daemon --stacktrace --info 2>&1 | tail -120
 
       - name: Upload AAB as artifact
         uses: actions/upload-artifact@v4
