@@ -172,6 +172,58 @@ describe('startNativeSpeech (native mic input capture)', () => {
     ctrl.abort();
   });
 
+
+  it('collapses repeated words and phrases from noisy native partials', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    const partials = [];
+    let finalText = '';
+    const ctrl = await startNativeSpeech({
+      lang: 'en-US',
+      onStart: () => {},
+      onPartial: (t) => partials.push(t),
+      onFinal: (t) => { finalText = t; },
+      onError: () => {},
+      onEnd: () => {},
+    });
+    await flush(10);
+
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['have have appointment have appointment with Andy have appointment with Andy tomorrow morning have appointment with Andy tomorrow morning at 5 pm'] });
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(20);
+    ctrl.stop();
+    await flush(600);
+
+    expect(partials.at(-1)).toBe('have appointment with Andy tomorrow morning at 5 pm');
+    expect(finalText).toBe('have appointment with Andy tomorrow morning at 5 pm');
+  });
+
+
+  it('collapses growing-prefix native loops from repeated self-heard speech', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    const partials = [];
+    let finalText = '';
+    const ctrl = await startNativeSpeech({
+      lang: 'en-US',
+      onStart: () => {},
+      onPartial: (t) => partials.push(t),
+      onFinal: (t) => { finalText = t; },
+      onError: () => {},
+      onEnd: () => {},
+    });
+    await flush(10);
+
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['have have appointment have appointment tomorrow have appointment tomorrow have appointment tomorrow have appointment tomorrow at have appointment tomorrow at 5:00 p.m.'] });
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(20);
+    ctrl.stop();
+    await flush(600);
+
+    expect(partials.at(-1)).toBe('have appointment tomorrow at 5:00 p.m.');
+    expect(finalText).toBe('have appointment tomorrow at 5:00 p.m.');
+  });
+
   it('reports an error when permission is denied', async () => {
     const { startNativeSpeech } = await import('./nativeSpeech.js');
     // Force denial via the shared permission flag (read live on each call).
