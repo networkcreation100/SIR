@@ -59,7 +59,7 @@ export function isNativePlatform() {
 //   onEnd()              -> called when the WHOLE session ends (after the user stops)
 // Returns a controller with .stop()/.abort(). If native is unavailable it
 // returns null so the caller can fall back to the Web Speech API.
-export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onError, onEnd }) {
+export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onError, onEnd, silenceTimeoutMs = 1000 }) {
   const ok = await loadNative();
   if (!ok) return null;
 
@@ -90,6 +90,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     let stopped = false;          // set true only when the user taps to stop
     let ended = false;            // guards onEnd() from firing twice
     let restartTimer = null;      // pending auto-restart timer
+    let smartSilenceTimer = null; // Smart Mode VAD: auto-stop after post-speech silence
     let cycleActive = false;      // true between listeningState started/stopped
     let partialListener = null;   // partialResults listener (Android)
     let stateListener = null;     // listeningState listener (Android, since 5.1)
@@ -99,6 +100,8 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     let liveChunk = '';
     const MAX_SILENCE_RESTARTS = 60; // safety cap (user normally stops manually)
     let restarts = 0;
+    let heardVoiceInput = false;
+    const smartStopMs = Math.max(250, Number(silenceTimeoutMs) || 1000);
 
     const normalizeWords = (text) => String(text || '')
       .toLowerCase()
@@ -193,10 +196,33 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       stateListener = null;
     };
 
+    const clearSmartSilenceTimer = () => {
+      if (smartSilenceTimer) { clearTimeout(smartSilenceTimer); smartSilenceTimer = null; }
+    };
+
+    const scheduleSmartSilenceStop = () => {
+      // VAD-style behavior: only arm the 1-second silence timeout after speech
+      // recognizer events have produced real text. Opening the mic alone must not
+      // start a raw timer, or mobile users get cut off before they can speak.
+      if (stopped || ended || !heardVoiceInput) return;
+      clearSmartSilenceTimer();
+      smartSilenceTimer = setTimeout(() => {
+        smartSilenceTimer = null;
+        if (stopped || ended) return;
+        stopped = true;
+        if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+        clearSmartSilenceTimer();
+        try { Plugin.stop(); } catch { /* ignore */ }
+        finishSession('');
+      }, smartStopMs);
+    };
+
+
     const finishSession = (message) => {
       if (ended) return;
       ended = true;
       if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+      clearSmartSilenceTimer();
       cleanupListeners();
       commitLiveChunk();
       const finalText = collapseRepeatedSpeech(committed.trim());
@@ -222,8 +248,10 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       partialListener = await Plugin.addListener('partialResults', (data) => {
         const text = (data && data.matches && data.matches[0]) ? String(data.matches[0]).trim() : '';
         if (text) {
+          heardVoiceInput = true;
           liveChunk = text;
           emitPartial();
+          scheduleSmartSilenceStop();
         }
       });
     } catch { /* partialResults not supported on this platform */ }
@@ -263,8 +291,10 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
         const matches = (result && result.matches) || [];
         const finalText = matches.length ? String(matches[0]).trim() : '';
         if (finalText) {
+          heardVoiceInput = true;
           liveChunk = finalText;
           emitPartial();
+          scheduleSmartSilenceStop();
         }
         // If the platform gives us NO listeningState events, we can't know when
         // the cycle really ends, so fall back to promise-driven restarts (with a
@@ -307,6 +337,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     const stop = () => {
       stopped = true;
       if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+      clearSmartSilenceTimer();
       try { Plugin.stop(); } catch { /* ignore */ }
       // Give the in-flight cycle a moment to resolve & commit, then finalize.
       setTimeout(() => finishSession((committed || liveChunk) ? '' : 'No speech detected. Tap the microphone and try again.'), 500);
@@ -317,6 +348,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       abort() {
         stopped = true;
         if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+        clearSmartSilenceTimer();
         try { Plugin.stop(); } catch { /* ignore */ }
         finishSession('');
       },

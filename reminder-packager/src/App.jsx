@@ -21,7 +21,7 @@ const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRou
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.7').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.8').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -1542,8 +1542,8 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
       </div>}
     </div>}
     {compactMode && !recipientMode ? <>
-      {reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)}
       <p className="card-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</p>
+      {reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)}
     </> : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
   </article>;
 }
@@ -1606,7 +1606,8 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-const WEB_SPEECH_AUTO_STOP_MS = 1200;
+const SMART_MIC_AUTO_STOP_MS = 1000;
+const WEB_SPEECH_AUTO_STOP_MS = SMART_MIC_AUTO_STOP_MS;
 const WEB_SPEECH_FINAL_STOP_MS = 260;
 
 function clearWebSpeechAutoStop(timerRef) {
@@ -1908,7 +1909,7 @@ function openDeliveryLinkAfterConfirmation(href) {
   window.setTimeout(waitForDismissal, 40);
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendProgress }) {
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -1918,11 +1919,46 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   const recipientRecognitionRef = useRef(null);
   const recipientSilenceTimerRef = useRef(null);
   const [recipientVoiceText, setRecipientVoiceText] = useState('');
+  const preGeneratedCardRef = useRef({ key: '', promise: null, result: null, error: null });
+  const [smartCardStatus, setSmartCardStatus] = useState('idle');
   const { values: recipients, phones, emails, invalid, contacts, labels: recipientLabels, duplicates } = classifyRecipientRows(recipientRows);
   const namedRecipientCount = contacts.filter(contact => contact.name).length;
   const valid = recipients.length > 0 && invalid.length === 0;
   const hasRecipientText = recipientRows.some(row => row.trim());
   const route = phones.length ? 'text' : emails.length ? 'email' : '';
+
+
+  function getPreparedShareInputs() {
+    const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
+    const deliveryRecipients = recipients;
+    const channel = phones.length ? 'sms-share' : 'email-share';
+    const payload = normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' });
+    const key = JSON.stringify({
+      title: payload.title,
+      date: payload.date,
+      time: payload.time,
+      location: payload.location,
+      locationPin: payload.locationPin,
+      permission: payload.permission,
+      recipients: deliveryRecipients,
+      channel
+    });
+    return { key, payload, displayRecipients, deliveryRecipients, channel };
+  }
+
+  async function generateSharedCard(prepared) {
+    const saved = await reminderSync({
+      action: 'save',
+      editor: reminder.sender || 'sender',
+      channel: prepared.channel,
+      recipients: prepared.deliveryRecipients,
+      payload: prepared.payload
+    });
+    const token = saved.share_token || saved.reminder?.share_token;
+    const url = buildShareUrl(token);
+    const savedVersion = Number(saved.reminder?.version || saved.version || prepared.payload.version || 1);
+    return { saved, token, url, sharedReminder: { ...prepared.payload, share_token: token, shareUrl: url, version: savedVersion } };
+  }
 
   function commitRecipientRows(rows, notice = '') {
     const normalized = normalizeRecipientRows(rows);
@@ -2009,14 +2045,15 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     }
     setRecipientListening(true);
     setRecipientVoiceText('');
-    setRecipientNotice('Starting microphone… speak after the listening cue.');
+    setRecipientNotice('Starting Smart Mode microphone… speak after the listening cue.');
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Mic ready — say a name, phone, or email. Tap again to finish.'); },
+      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); },
       onPartial: (t) => { if (t) { setRecipientVoiceText(t); setRecipientNotice(`Heard: \u201c${t}\u201d`); } },
       onFinal: (t) => { if (t) applyRecipientVoiceTranscript(t); },
       onError: (m) => setRecipientNotice(m),
       onEnd: () => { recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); },
+      silenceTimeoutMs: SMART_MIC_AUTO_STOP_MS,
     });
     if (nativeCtrl) { if (!nativeCtrl.ended) recipientRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
@@ -2029,7 +2066,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
-    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Mic ready — say a name, phone, or email. I’ll stop automatically after you pause.'); };
+    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); };
     recognition.onerror = event => { clearWebSpeechAutoStop(recipientSilenceTimerRef); window.setTimeout(() => setRecipientListening(false), 500); setRecipientNotice(`Contact voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
     recognition.onend = () => { clearWebSpeechAutoStop(recipientSilenceTimerRef); recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); };
     recognition.onresult = event => {
@@ -2062,6 +2099,38 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     if (initialRecipientText) commitRecipientRows(rowsFromRecipientText(initialRecipientText).map(row => smartFormatRecipients(row)));
   }, [initialRecipientText]);
 
+  useEffect(() => {
+    if (!valid || !recipients.length) {
+      preGeneratedCardRef.current = { key: '', promise: null, result: null, error: null };
+      setSmartCardStatus('idle');
+      return;
+    }
+    const prepared = getPreparedShareInputs();
+    if (preGeneratedCardRef.current.promise || (preGeneratedCardRef.current.key === prepared.key && preGeneratedCardRef.current.result)) return;
+    const timer = window.setTimeout(() => {
+      const current = preGeneratedCardRef.current;
+      if (current.promise || current.result) return;
+      setSmartCardStatus('preparing');
+      const promise = generateSharedCard(prepared)
+        .then(result => {
+          if (preGeneratedCardRef.current.key === prepared.key) {
+            preGeneratedCardRef.current = { key: prepared.key, promise: null, result, error: null };
+            setSmartCardStatus('ready');
+          }
+          return result;
+        })
+        .catch(error => {
+          if (preGeneratedCardRef.current.key === prepared.key) {
+            preGeneratedCardRef.current = { key: prepared.key, promise: null, result: null, error };
+            setSmartCardStatus('idle');
+          }
+          return null;
+        });
+      preGeneratedCardRef.current = { key: prepared.key, promise, result: null, error: null };
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [valid, recipients.join('|'), recipientLabels.join('|'), phones.length, emails.length, reminder.title, reminder.date, reminder.time, reminder.location, JSON.stringify(reminder.locationPin || null)]);
+
   async function share() {
     setSecondaryEmailLink('');
     if (invalid.length) {
@@ -2073,8 +2142,8 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       return;
     }
 
-    const deliveryRecipients = recipients;
-    const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
+    const prepared = getPreparedShareInputs();
+    const { deliveryRecipients, displayRecipients } = prepared;
     const reportProgress = update => {
       try {
         onSendProgress && onSendProgress({
@@ -2085,26 +2154,35 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
         });
       } catch (_) { /* ignore progress UI errors */ }
     };
-    reportProgress({ phase: 'preparing', pending: true, statusText: 'Preparing reminder card details…' });
-    setMessage('Preparing reminder card details…');
+    const optimisticSentAt = new Date().toISOString();
+    reportProgress({ phase: 'preparing', pending: true, etaSeconds: 4, sentAt: optimisticSentAt, statusText: 'Checking Smart Mode prepared card…' });
     try {
-      const payload = normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' });
-      reportProgress({ phase: 'server-generating', pending: true, statusText: 'Generating shared card on the server…' });
-      setMessage('Generating shared card on the server…');
-      const saved = await reminderSync({
-        action: 'save',
-        editor: reminder.sender || 'sender',
-        channel: phones.length ? 'sms-share' : 'email-share',
-        recipients: deliveryRecipients,
-        payload
-      });
-      reportProgress({ phase: 'server-generated', pending: true, statusText: 'Server card generated. Creating secure share link…' });
-      const token = saved.share_token || saved.reminder?.share_token;
-      const url = buildShareUrl(token);
-      const savedVersion = Number(saved.reminder?.version || saved.version || payload.version || 1);
-      let sharedReminder = { ...payload, share_token: token, shareUrl: url, version: savedVersion };
+      onSendStarted && onSendStarted(normalizeReminder({ ...reminder, recipients: displayRecipients, sentAt: optimisticSentAt }));
+    } catch (_) { /* ignore optimistic deck reset errors */ }
+    setMessage('Checking Smart Mode prepared card…');
+    try {
+      let preparedResult = null;
+      const cached = preGeneratedCardRef.current;
+      if (cached.key === prepared.key && cached.result) {
+        preparedResult = cached.result;
+        reportProgress({ phase: 'server-generated', pending: true, etaSeconds: 2, statusText: 'Smart Mode card is ready. Scheduling reminder notification…' });
+      } else if (cached.key === prepared.key && cached.promise) {
+        reportProgress({ phase: 'server-generating', pending: true, etaSeconds: 4, statusText: 'Smart Mode is finishing the shared card…' });
+        setMessage('Smart Mode is finishing the shared card…');
+        preparedResult = await cached.promise;
+      }
+      if (!preparedResult) {
+        reportProgress({ phase: 'server-generating', pending: true, etaSeconds: 5, statusText: 'Generating shared card now…' });
+        setMessage('Generating shared card now…');
+        const freshPromise = generateSharedCard(prepared);
+        preGeneratedCardRef.current = { key: prepared.key, promise: freshPromise, result: null, error: null };
+        preparedResult = await freshPromise;
+      }
+      const { token, url, sharedReminder } = preparedResult;
+      preGeneratedCardRef.current = { key: prepared.key, promise: null, result: preparedResult, error: null };
+      setSmartCardStatus('ready');
       setShareUrl(url);
-      reportProgress({ phase: 'notification', pending: true, statusText: 'Card generated. Scheduling reminder notification…' });
+      reportProgress({ phase: 'notification', pending: true, etaSeconds: 2, statusText: 'Card generated. Scheduling reminder notification…' });
       // Schedule a local notification 15 minutes before the meeting/appointment time (native only).
       try {
         await scheduleReminderNotification({
@@ -2165,6 +2243,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     <div className={`recognition-banner compact ${valid ? 'valid' : invalid.length ? 'invalid' : ''}`} role="status" aria-live="polite">
       {valid ? <><CheckCircle2 size={15}/> Ready: {namedRecipientCount ? `${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} · ` : ''}{phones.length ? `${phones.length} text` : ''}{phones.length && emails.length ? ' · ' : ''}{emails.length ? `${emails.length} email` : ''}</> : invalid.length ? <><AlertTriangle size={15}/> Fix unrecognized entry before Send.</> : <><Sparkles size={15}/> Smart field recognizes typed names, phones, and emails.</>}
     </div>
+    {valid && <p className={`smart-card-status ${smartCardStatus}`}>{smartCardStatus === 'ready' ? 'Smart Mode card ready before Send.' : smartCardStatus === 'preparing' ? 'Smart Mode is pre-generating the card…' : 'Smart Mode will prepare the card before Send.'}</p>}
     <div className="modal-actions button-hierarchy"><button type="button" className="secondary cancel preview-collapse-action" onClick={previewAction}>{collapsed ? 'Back' : 'Preview'}</button><button type="button" className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
     {message && <p className={!message.toLowerCase().includes('failed') && !message.toLowerCase().includes('could not') ? 'success' : 'field-error block'}>{message}</p>}
     {secondaryEmailLink && <button type="button" className="secondary full" onClick={() => { window.location.href = secondaryEmailLink; }}>Open email for email recipient</button>}
@@ -2404,15 +2483,21 @@ function App() {
     const deletingActive = currentPreviewIndex === 0 || sameReminderCard(activeReminder, cardToDelete);
     const remainingSaved = reminders.filter(item => !sameReminderCard(normalizeReminder(item), cardToDelete));
     if (deletingActive) {
-      const nextCard = previewReminders.find((card, index) => index !== currentPreviewIndex && !sameReminderCard(card, cardToDelete));
-      if (nextCard) {
-        setForm(nextCard);
+      if (isBlankPreviewCard(cardToDelete) && !cardToDelete?.sentAt) {
+        setForm(makeFreshBlankReminder());
         setReminders(remainingSaved);
         setPreviewIndex(0);
       } else {
-        setForm(initialReminder);
-        setReminders([]);
-        setPreviewIndex(0);
+        const nextCard = previewReminders.find((card, index) => index !== currentPreviewIndex && !sameReminderCard(card, cardToDelete));
+        if (nextCard) {
+          setForm(nextCard);
+          setReminders(remainingSaved);
+          setPreviewIndex(0);
+        } else {
+          setForm(makeFreshBlankReminder());
+          setReminders([]);
+          setPreviewIndex(0);
+        }
       }
     } else {
       setReminders(remainingSaved);
@@ -2739,15 +2824,16 @@ function App() {
     pauseBackgroundMusicForMicrophone();
     setListening(true);
     setVoiceTranscript('');
-    setVoiceStatus('Starting microphone… speak after the listening cue.');
+    setVoiceStatus('Starting Smart Mode microphone… speak after the listening cue.');
     // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Mic ready — speak naturally. Tap again to finish.'); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); },
       onPartial: (t) => { if (t) setVoiceTranscript(t); },
       onFinal: (t) => { if (t) applyVoiceTranscript(t); },
       onError: (m) => setVoiceStatus(m),
       onEnd: () => { recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); },
+      silenceTimeoutMs: SMART_MIC_AUTO_STOP_MS,
     });
     micStartPendingRef.current.main = false;
     if (nativeCtrl) { if (!nativeCtrl.ended) recognitionRef.current = nativeCtrl; return; }
@@ -2763,7 +2849,7 @@ function App() {
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
-    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Mic ready — speak naturally. I’ll stop automatically after you pause.'); };
+    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); };
     recognition.onerror = event => { clearWebSpeechAutoStop(speechSilenceTimerRef); window.setTimeout(() => setListening(false), 1000); setVoiceStatus(`Voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
     recognition.onend = () => { clearWebSpeechAutoStop(speechSilenceTimerRef); recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); };
     recognition.onresult = event => {
@@ -2796,15 +2882,16 @@ function App() {
     pauseBackgroundMusicForMicrophone();
     setAddressMicVisible(true);
     setLocationListening(true);
-    setLocationStatus('Starting address microphone… speak after the listening cue.');
+    setLocationStatus('Starting Smart Mode address microphone… speak after the listening cue.');
     fieldRefs.current[3]?.focus();
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Mic ready — say the address. Tap again to finish.'); fieldRefs.current[3]?.focus(); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 1 second after you pause.'); fieldRefs.current[3]?.focus(); },
       onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
       onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
       onError: (m) => setLocationStatus(m),
       onEnd: () => { locationRecognitionRef.current = null; micStartPendingRef.current.location = false; window.setTimeout(() => setLocationListening(false), 300); },
+      silenceTimeoutMs: SMART_MIC_AUTO_STOP_MS,
     });
     micStartPendingRef.current.location = false;
     if (nativeCtrl) { if (!nativeCtrl.ended) locationRecognitionRef.current = nativeCtrl; return; }
@@ -2825,7 +2912,7 @@ function App() {
       pauseBackgroundMusicForMicrophone();
       setAddressMicVisible(true);
       setLocationListening(true);
-      setLocationStatus('Mic ready — say the address. I’ll stop automatically after you pause.');
+      setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 1 second after you pause.');
       fieldRefs.current[3]?.focus();
     };
     recognition.onerror = event => {
@@ -2977,16 +3064,27 @@ function App() {
       sentAt: progress.sentAt || prev?.sentAt || new Date().toISOString(),
       phase: progress.phase || prev?.phase || 'preparing',
       statusText: progress.statusText || prev?.statusText || 'Preparing reminder card…',
+      etaSeconds: progress.etaSeconds ?? prev?.etaSeconds ?? 4,
+      pendingStartedAt: progress.pendingStartedAt || prev?.pendingStartedAt || Date.now(),
       pending: progress.pending !== false && !progress.error,
       error: !!progress.error
     }));
   }
 
-  function handleReminderSent(sentReminder) {
+  useEffect(() => {
+    if (!sentConfirmation?.pending || sentConfirmation.error) return;
+    const timer = window.setInterval(() => {
+      setSentConfirmation(prev => {
+        if (!prev?.pending || prev.error) return prev;
+        const nextEta = Math.max(1, Number(prev.etaSeconds || 1) - 1);
+        return { ...prev, etaSeconds: nextEta };
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [sentConfirmation?.pending, sentConfirmation?.error]);
+
+  function placeSentCardBehindFreshBlank(sentReminder) {
     const stamped = normalizeReminder({ ...sentReminder, sentAt: sentReminder.sentAt || new Date().toISOString() });
-    const blankReminder = makeFreshBlankReminder();
-    // Push the sent card into the saved stack so previewReminders renders it behind
-    // the fresh active card (the active/composer card is always index 0).
     setReminders(prev => {
       const withoutDup = prev.filter(item => {
         const n = normalizeReminder(item);
@@ -2994,12 +3092,9 @@ function App() {
       });
       return [stamped, ...withoutDup].slice(0, 6);
     });
-    // Reset the composer to a brand-new blank Preview card. Apply once now and
-    // once on the next tick so late async voice/geocode callbacks cannot repaint
-    // the sent card as the active front card.
     previewVoiceTargetRef.current = null;
     setVoiceTranscript('');
-    setForm(blankReminder);
+    setForm(makeFreshBlankReminder());
     window.setTimeout(() => setForm(makeFreshBlankReminder()), 0);
     setPreviewIndex(0);
     setPreviewEditOpen(false);
@@ -3007,12 +3102,22 @@ function App() {
     setVoiceRecipientText('');
     setSendOpen(false);
     setSendCollapsed(false);
+    return stamped;
+  }
+
+  function handleReminderSendStarted(sentReminder) {
+    placeSentCardBehindFreshBlank(sentReminder);
+  }
+
+  function handleReminderSent(sentReminder) {
+    const stamped = placeSentCardBehindFreshBlank(sentReminder);
     setSentConfirmation({
       title: stamped.title,
       recipients: Array.isArray(stamped.recipients) ? stamped.recipients : [],
       sentAt: stamped.sentAt,
       phase: 'sent',
       statusText: 'Server card generated and delivery link ready.',
+      etaSeconds: 0,
       pending: false,
       error: false
     });
@@ -3191,12 +3296,12 @@ function App() {
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
       </div>
     </div>}
     {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label={sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Reminder send error' : 'Reminder sent'} onClick={() => { if (!sentConfirmation.pending) setSentConfirmation(null); }}>
@@ -3206,6 +3311,7 @@ function App() {
         <p className="sent-confirm-title">{sentConfirmation.title && sentConfirmation.title !== 'Untitled Reminder' ? sentConfirmation.title : 'Your reminder'}</p>
         {sentConfirmation.recipients?.length > 0 && <p className="sent-confirm-recipients">{sentConfirmation.pending ? 'Sending to' : sentConfirmation.error ? 'Attempted for' : 'Sent to'} {sentConfirmation.recipients.join(', ')}</p>}
         {sentConfirmation.statusText && <p className="sent-confirm-status" role="status" aria-live="polite">{sentConfirmation.statusText}</p>}
+        {sentConfirmation.pending && <p className="sent-confirm-countdown">Still working — about {Math.max(1, Number(sentConfirmation.etaSeconds || 1))}s remaining.</p>}
         {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-time">{formatSentStamp(sentConfirmation.sentAt)}</p>}
         {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-hint">This reminder moved to the back of your cards. Use the navigation to review it.</p>}
         {sentConfirmation.pending && <div className="sent-progress-steps" aria-label="Send progress"><span className={['preparing','server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Preparing</span><span className={['server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Server</span><span className={['notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Notify</span><span className={sentConfirmation.phase === 'delivery' ? 'active' : ''}>Link</span></div>}

@@ -224,6 +224,53 @@ describe('startNativeSpeech (native mic input capture)', () => {
     expect(finalText).toBe('have appointment tomorrow at 5:00 p.m.');
   });
 
+
+
+  it('Smart Mode keeps native listening open until voice input, then applies the 1-second silence rule', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    let err = '';
+    let ended = false;
+    let finalText = '';
+    await startNativeSpeech({
+      lang: 'en-US',
+      silenceTimeoutMs: 1000,
+      onStart: () => {},
+      onPartial: () => {},
+      onFinal: (t) => { finalText = t; },
+      onError: (m) => { err = m; },
+      onEnd: () => { ended = true; },
+    });
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    await flush(1120);
+    expect(ended).toBe(false);
+    expect(err).toBe('');
+
+    mockPlugin.__emit('partialResults', { matches: ['meeting with Andy'] });
+    await flush(1120);
+    expect(ended).toBe(true);
+    expect(finalText).toBe('meeting with Andy');
+  });
+
+  it('Smart Mode finalizes native speech 1 second after the last voice input', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    let finalText = '';
+    let ended = false;
+    await startNativeSpeech({
+      lang: 'en-US',
+      silenceTimeoutMs: 1000,
+      onStart: () => {},
+      onPartial: () => {},
+      onFinal: (t) => { finalText = t; },
+      onError: () => {},
+      onEnd: () => { ended = true; },
+    });
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['meet Andy at five'] });
+    await flush(1120);
+    expect(ended).toBe(true);
+    expect(finalText).toBe('meet Andy at five');
+  });
+
   it('reports an error when permission is denied', async () => {
     const { startNativeSpeech } = await import('./nativeSpeech.js');
     // Force denial via the shared permission flag (read live on each call).
