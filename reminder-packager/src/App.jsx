@@ -1477,6 +1477,17 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   const urgencyPreviewLabel = urgencyKey === 'urgent' ? 'Important' : '';
   const scheduleBorder = urgencyMeta?.color || '#3b82f6';
   const accent = '#22c55e';
+  const typedTitle = String(editText || reminder.title || '').trim();
+  const spokenTitle = String(compactVoiceTranscript || '').trim();
+  const cardHasUserInput = Boolean(
+    spokenTitle ||
+    (typedTitle && typedTitle !== placeholderReminderTitle && typedTitle !== 'Untitled Reminder') ||
+    !isLocationUnset(reminder.location) ||
+    reminder.locationPin ||
+    String(reminder.notes || '').trim() ||
+    reminder.sentAt
+  );
+  const isBlankCard = compactMode && !recipientMode && !cardHasUserInput;
   const noLocationSet = isLocationUnset(reminder.location);
   const locationLabel = noLocationSet ? 'No location set' : compactAddress(reminder.location);
   const dueLabel = noLocationSet && !recipientMode ? formatDueForPreviewTimezone(reminder, previewTimezone) : formatDue(reminder);
@@ -1501,7 +1512,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     drawing.current = [];
   }
 
-  return <article className={`reminder-card simplified-preview ${editMode && locationToolsOpen ? 'loctools-active' : ''}`} style={{ '--accent': accent, '--schedule-border': scheduleBorder }}>
+  return <article className={`reminder-card simplified-preview ${isBlankCard ? 'blank-card' : ''} ${editMode && locationToolsOpen ? 'loctools-active' : ''}`} style={{ '--accent': accent, '--schedule-border': scheduleBorder }}>
 
     <div className="preview-card-toolbar">
       {!recipientMode && onDelete && <button type="button" className="ghost preview-delete-card" aria-label="Delete preview reminder" title="Delete preview reminder" onClick={onDelete}><X size={17}/></button>}

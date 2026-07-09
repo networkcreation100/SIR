@@ -2074,3 +2074,18 @@ body.sir-send-collapsed{overflow-y:auto;}
   .sent-confirm-status{font-size:13px;max-width:250px;}
 }
 
+
+
+/* Blank compact card: keep auto-filled date/time visually inactive until the user adds content. */
+.reminder-card.simplified-preview.blank-card .due{
+  border-color:#d1d5db!important;
+  background:#f3f4f6!important;
+  color:#6b7280!important;
+  box-shadow:none!important;
+}
+.reminder-card.simplified-preview.blank-card .due span,
+.reminder-card.simplified-preview.blank-card .due b,
+.reminder-card.simplified-preview.blank-card .due svg,
+.reminder-card.simplified-preview.blank-card .due .preview-importance{
+  color:#6b7280!important;
+}

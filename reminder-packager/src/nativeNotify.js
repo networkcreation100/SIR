@@ -17,6 +17,16 @@ let capacitorRef = null;
 let LocalNotifications = null;
 let loadTried = false;
 
+const NATIVE_NOTIFY_TIMEOUT_MS = 1400;
+
+function withNativeTimeout(promise, fallback, timeoutMs = NATIVE_NOTIFY_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise(resolve => { timer = setTimeout(() => resolve(fallback), timeoutMs); })
+  ]).finally(() => { if (timer) clearTimeout(timer); });
+}
+
 async function loadPlugin() {
   if (loadTried) return LocalNotifications;
   loadTried = true;
@@ -48,9 +58,9 @@ export async function ensureNotifyPermission() {
   const plugin = await loadPlugin();
   if (!plugin) return false;
   try {
-    let perm = await plugin.checkPermissions();
+    let perm = await withNativeTimeout(plugin.checkPermissions(), { display: 'denied', reason: 'check-timeout' });
     if (perm.display !== 'granted') {
-      perm = await plugin.requestPermissions();
+      perm = await withNativeTimeout(plugin.requestPermissions(), { display: 'denied', reason: 'request-timeout' });
     }
     return perm.display === 'granted';
   } catch {
@@ -99,7 +109,7 @@ export async function scheduleReminderNotification(reminder) {
   const meetingMs = meetingAt.getTime();
   if (meetingMs <= now) {
     // Meeting already passed — clear any stale scheduled notification.
-    try { await plugin.cancel({ notifications: [{ id }] }); } catch {}
+    try { await withNativeTimeout(plugin.cancel({ notifications: [{ id }] }), null); } catch {}
     return { scheduled: false, reason: 'past' };
   }
 
@@ -114,8 +124,8 @@ export async function scheduleReminderNotification(reminder) {
 
   try {
     // Replace any existing schedule for this reminder first.
-    try { await plugin.cancel({ notifications: [{ id }] }); } catch {}
-    await plugin.schedule({
+    try { await withNativeTimeout(plugin.cancel({ notifications: [{ id }] }), null); } catch {}
+    const scheduleResult = await withNativeTimeout(plugin.schedule({
       notifications: [{
         id,
         title,
@@ -125,7 +135,8 @@ export async function scheduleReminderNotification(reminder) {
         // The number sets/updates the app-icon badge when the notification fires.
         extra: { key: String(key), meetingAt: meetingAt.toISOString() }
       }]
-    });
+    }), { timedOut: true });
+    if (scheduleResult?.timedOut) return { scheduled: false, reason: 'schedule-timeout', id };
     await refreshBadgeCount(plugin);
     return { scheduled: true, at: fireAt.toISOString(), id };
   } catch (err) {
@@ -138,19 +149,19 @@ export async function cancelReminderNotification(key) {
   const plugin = await loadPlugin();
   if (!plugin) return;
   const id = notifId(key);
-  try { await plugin.cancel({ notifications: [{ id }] }); } catch {}
+  try { await withNativeTimeout(plugin.cancel({ notifications: [{ id }] }), null); } catch {}
   try { await refreshBadgeCount(plugin); } catch {}
 }
 
 // Count still-pending scheduled notifications and reflect that on the app badge.
 async function refreshBadgeCount(plugin) {
   try {
-    const pending = await plugin.getPending();
+    const pending = await withNativeTimeout(plugin.getPending(), { notifications: [] });
     const count = (pending?.notifications || []).length;
     // On iOS the badge is set by the notification itself; explicitly keep the
     // app icon badge in sync with the pending count so it clears correctly.
     if (plugin.setBadge) {
-      await plugin.setBadge({ count }).catch(() => {});
+      await withNativeTimeout(plugin.setBadge({ count }).catch(() => {}), null);
     }
     return count;
   } catch {
