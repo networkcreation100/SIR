@@ -125,6 +125,53 @@ describe('startNativeSpeech (native mic input capture)', () => {
     expect(startCalls).toBeGreaterThanOrEqual(2);
   });
 
+  it('deduplicates cumulative native partials across restart cycles', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    let finalText = '';
+    const partials = [];
+    const ctrl = await startNativeSpeech({
+      lang: 'en-US',
+      onStart: () => {}, onPartial: (t) => partials.push(t), onFinal: (t) => { finalText = t; }, onError: () => {}, onEnd: () => {},
+    });
+    await flush(10);
+
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['call John'] });
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(260);
+
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    // Some Android recognizers send the previous phrase plus the new words.
+    mockPlugin.__emit('partialResults', { matches: ['call John at three pm'] });
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(20);
+
+    ctrl.stop();
+    await flush(600);
+    expect(finalText).toBe('call John at three pm');
+    expect(finalText).not.toContain('call John call John');
+    expect(partials.at(-1)).toBe('call John at three pm');
+  });
+
+  it('does not re-emit identical repeated partial text', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    const partials = [];
+    const ctrl = await startNativeSpeech({
+      lang: 'en-US',
+      onStart: () => {}, onPartial: (t) => partials.push(t), onFinal: () => {}, onError: () => {}, onEnd: () => {},
+    });
+    await flush(10);
+
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['meeting tomorrow'] });
+    mockPlugin.__emit('partialResults', { matches: ['meeting tomorrow'] });
+    mockPlugin.__emit('partialResults', { matches: ['meeting tomorrow'] });
+    await flush(10);
+
+    expect(partials).toEqual(['meeting tomorrow']);
+    ctrl.abort();
+  });
+
   it('reports an error when permission is denied', async () => {
     const { startNativeSpeech } = await import('./nativeSpeech.js');
     // Force denial via the shared permission flag (read live on each call).

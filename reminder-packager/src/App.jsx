@@ -1890,27 +1890,31 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       recipientRecognitionRef.current = null;
       return;
     }
+    setRecipientListening(true);
+    setRecipientVoiceText('');
+    setRecipientNotice('Starting microphone… speak after the listening cue.');
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Listening… tap the mic again when you are done.'); },
+      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Mic ready — say a name, phone, or email. Tap again to finish.'); },
       onPartial: (t) => { if (t) { setRecipientVoiceText(t); setRecipientNotice(`Heard: \u201c${t}\u201d`); } },
       onFinal: (t) => { if (t) applyRecipientVoiceTranscript(t); },
       onError: (m) => setRecipientNotice(m),
       onEnd: () => { recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); },
     });
-    if (nativeCtrl) { recipientRecognitionRef.current = nativeCtrl; return; }
+    if (nativeCtrl) { if (!nativeCtrl.ended) recipientRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
+      setRecipientListening(false);
       setRecipientNotice('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
       return;
     }
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Listening for contact name, phone, or email…'); };
+    recognition.continuous = true;
+    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Mic ready — say a name, phone, or email. Tap again to finish.'); };
     recognition.onerror = event => { window.setTimeout(() => setRecipientListening(false), 500); setRecipientNotice(`Contact voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
-    recognition.onend = () => window.setTimeout(() => setRecipientListening(false), 500);
+    recognition.onend = () => { recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); };
     recognition.onresult = event => {
       const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
       if (transcript) {
@@ -1920,6 +1924,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       const finalTranscript = Array.from(event.results || []).filter(result => result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
       if (finalTranscript) applyRecipientVoiceTranscript(finalTranscript);
     };
+    recipientRecognitionRef.current = recognition;
     recognition.start();
   }
 
@@ -2481,18 +2486,23 @@ function App() {
       recognitionRef.current = null;
       return;
     }
+    pauseBackgroundMusicForMicrophone();
+    setListening(true);
+    setVoiceTranscript('');
+    setVoiceStatus('Starting microphone… speak after the listening cue.');
     // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Listening… tap the mic again when you are done.'); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Mic ready — speak naturally. Tap again to finish.'); },
       onPartial: (t) => { if (t) setVoiceTranscript(t); },
       onFinal: (t) => { if (t) applyVoiceTranscript(t); },
       onError: (m) => setVoiceStatus(m),
       onEnd: () => { recognitionRef.current = null; window.setTimeout(() => setListening(false), 300); },
     });
-    if (nativeCtrl) { recognitionRef.current = nativeCtrl; return; }
+    if (nativeCtrl) { if (!nativeCtrl.ended) recognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
+      setListening(false);
       setVoiceStatus('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
       return;
     }
@@ -2500,10 +2510,10 @@ function App() {
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Listening…'); };
+    recognition.continuous = true;
+    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Mic ready — speak naturally. Tap again to finish.'); };
     recognition.onerror = event => { window.setTimeout(() => setListening(false), 1000); setVoiceStatus(`Voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
-    recognition.onend = () => window.setTimeout(() => setListening(false), 1000);
+    recognition.onend = () => { recognitionRef.current = null; window.setTimeout(() => setListening(false), 300); };
     recognition.onresult = event => {
       const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
       if (transcript) setVoiceTranscript(transcript);
@@ -2522,17 +2532,23 @@ function App() {
       locationRecognitionRef.current = null;
       return;
     }
+    pauseBackgroundMusicForMicrophone();
+    setAddressMicVisible(true);
+    setLocationListening(true);
+    setLocationStatus('Starting address microphone… speak after the listening cue.');
+    fieldRefs.current[3]?.focus();
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Listening for address… tap the mic again when you are done.'); fieldRefs.current[3]?.focus(); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Mic ready — say the address. Tap again to finish.'); fieldRefs.current[3]?.focus(); },
       onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
       onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
       onError: (m) => setLocationStatus(m),
       onEnd: () => { locationRecognitionRef.current = null; window.setTimeout(() => setLocationListening(false), 300); },
     });
-    if (nativeCtrl) { locationRecognitionRef.current = nativeCtrl; return; }
+    if (nativeCtrl) { if (!nativeCtrl.ended) locationRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
+      setLocationListening(false);
       setLocationStatus('Address voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
       return;
     }
@@ -2541,19 +2557,19 @@ function App() {
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.onstart = () => {
       pauseBackgroundMusicForMicrophone();
       setAddressMicVisible(true);
       setLocationListening(true);
-      setLocationStatus('Listening for address…');
+      setLocationStatus('Mic ready — say the address. Tap again to finish.');
       fieldRefs.current[3]?.focus();
     };
     recognition.onerror = event => {
       window.setTimeout(() => setLocationListening(false), 500);
       setLocationStatus(`Address capture stopped: ${event.error || 'microphone unavailable'}.`);
     };
-    recognition.onend = () => window.setTimeout(() => setLocationListening(false), 500);
+    recognition.onend = () => { locationRecognitionRef.current = null; window.setTimeout(() => setLocationListening(false), 300); };
     recognition.onresult = event => {
       const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
       if (!transcript) return;

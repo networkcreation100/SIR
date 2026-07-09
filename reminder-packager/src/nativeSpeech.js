@@ -71,7 +71,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       if (avail && avail.available === false) {
         onError && onError('Speech recognition is not available on this device.');
         onEnd && onEnd();
-        return { stop() {}, abort() {} };
+        return { stop() {}, abort() {}, ended: true };
       }
     } catch { /* available() not implemented on some platforms — continue */ }
 
@@ -82,7 +82,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       if (!req || req.speechRecognition !== 'granted') {
         onError && onError('Microphone permission was denied. Enable it in Settings to use voice input.');
         onEnd && onEnd();
-        return { stop() {}, abort() {} };
+        return { stop() {}, abort() {}, ended: true };
       }
     }
 
@@ -100,18 +100,56 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     const MAX_SILENCE_RESTARTS = 60; // safety cap (user normally stops manually)
     let restarts = 0;
 
-    const joinText = (a, b) => [a, b].map(s => (s || '').trim()).filter(Boolean).join(' ').trim();
+    const normalizeWords = (text) => String(text || '')
+      .toLowerCase()
+      .replace(/[.,!?;:\"'()\[\]{}]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean);
 
-    const emitPartial = () => {
-      const combined = joinText(committed, liveChunk);
-      if (combined) onPartial && onPartial(combined);
+    // Native Android restart cycles sometimes re-send the previous phrase plus
+    // the new phrase (or just repeat the last partial). Merge by word overlap so
+    // "call John" + "call John at three" becomes "call John at three", while
+    // "call John" + "at three" becomes "call John at three" — no stutter text.
+    const mergeSpeechText = (base, next) => {
+      const a = String(base || '').replace(/\s+/g, ' ').trim();
+      const b = String(next || '').replace(/\s+/g, ' ').trim();
+      if (!a) return b;
+      if (!b) return a;
+      const aw = a.split(/\s+/);
+      const bw = b.split(/\s+/);
+      const an = normalizeWords(a);
+      const bn = normalizeWords(b);
+      const aj = an.join(' ');
+      const bj = bn.join(' ');
+      if (!bj || bj === aj) return a;
+      if (bj.startsWith(aj + ' ')) return b;
+      if (aj.endsWith(' ' + bj)) return a;
+      let overlap = 0;
+      const max = Math.min(an.length, bn.length);
+      for (let n = max; n > 0; n -= 1) {
+        if (an.slice(-n).join(' ') === bn.slice(0, n).join(' ')) { overlap = n; break; }
+      }
+      return [a, bw.slice(overlap).join(' ')].filter(Boolean).join(' ').trim();
     };
 
-    // Roll the current cycle's live partial into committed text.
+    let lastPartialEmitted = '';
+    const emitPartial = () => {
+      const combined = mergeSpeechText(committed, liveChunk);
+      if (combined && combined !== lastPartialEmitted) {
+        lastPartialEmitted = combined;
+        onPartial && onPartial(combined);
+      }
+    };
+
+    // Roll the current cycle's live partial into committed text without repeating
+    // phrases the recognizer already sent in an earlier cycle.
     const commitLiveChunk = () => {
       if (liveChunk && liveChunk.trim()) {
-        committed = joinText(committed, liveChunk);
+        committed = mergeSpeechText(committed, liveChunk);
         liveChunk = '';
+        lastPartialEmitted = committed;
       }
     };
 
@@ -143,7 +181,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       restarts += 1;
       // Small gap lets Android release the recognizer before we re-arm it.
       if (restartTimer) clearTimeout(restartTimer);
-      restartTimer = setTimeout(() => { if (!stopped && !ended) runCycle(); }, 350);
+      restartTimer = setTimeout(() => { if (!stopped && !ended) runCycle(); }, 220);
     };
 
     // Live partial results (Android). iOS returns everything via the start() promise.
@@ -253,6 +291,6 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
   } catch (err) {
     onError && onError('Voice capture unavailable: ' + ((err && (err.message || err)) || 'unknown error') + '.');
     onEnd && onEnd();
-    return { stop() {}, abort() {} };
+    return { stop() {}, abort() {}, ended: true };
   }
 }
