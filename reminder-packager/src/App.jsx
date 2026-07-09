@@ -350,7 +350,7 @@ function normalizePreviewSettings(value) {
     showRecipientsInPreview: Boolean(value.showRecipientsInPreview),
     activeIndex: Number.isFinite(Number(value.activeIndex)) && Number(value.activeIndex) >= 0 ? Number(value.activeIndex) : 0,
     previewTimezone: TIMEZONE_OPTIONS.some(option => option.code === value.previewTimezone) ? value.previewTimezone : 'HST',
-    displayMode: value.displayMode === 'standard' ? 'standard' : 'compact'
+    displayMode: 'compact'
   };
   return { value: safe, repaired: JSON.stringify(safe) !== JSON.stringify(value), reason: 'Preview settings were corrected.' };
 }
@@ -2060,7 +2060,7 @@ function App() {
   const [previewIndex, setPreviewIndex] = useState(() => readStoredValue(PREVIEW_SETTINGS_KEY, { activeIndex: 0 })?.activeIndex || 0);
   const [showRecipientsInPreview, setShowRecipientsInPreview] = useState(() => readStoredValue(PREVIEW_SETTINGS_KEY, { showRecipientsInPreview: false })?.showRecipientsInPreview || false);
   const [previewTimezone, setPreviewTimezone] = useState(() => readStoredValue(PREVIEW_SETTINGS_KEY, { previewTimezone: 'HST' })?.previewTimezone || 'HST');
-  const [displayMode, setDisplayMode] = useState(() => readStoredValue(PREVIEW_SETTINGS_KEY, { displayMode: 'compact' })?.displayMode === 'standard' ? 'standard' : 'compact');
+  const [displayMode, setDisplayMode] = useState('compact');
   const [previewRecipients, setPreviewRecipients] = useState(() => readStoredValue(PREVIEW_RECIPIENTS_KEY, []));
   const [previewMotionKey, setPreviewMotionKey] = useState(0);
   const [voiceStatus, setVoiceStatus] = useState('');
@@ -2650,7 +2650,7 @@ function App() {
     const settings = readStoredValue(PREVIEW_SETTINGS_KEY, { showRecipientsInPreview, activeIndex: currentPreviewIndex, previewTimezone });
     setShowRecipientsInPreview(Boolean(settings.showRecipientsInPreview));
     setPreviewTimezone(settings.previewTimezone || 'HST');
-    setDisplayMode(settings.displayMode === 'standard' ? 'standard' : 'compact');
+    setDisplayMode('compact');
     setPreviewRecipients(readStoredValue(PREVIEW_RECIPIENTS_KEY, []));
   }
 
@@ -2791,12 +2791,6 @@ function App() {
       <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1></div>
       <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : 'Open app settings'} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/></button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
         <div className="settings-menu-head"><strong>Menu</strong><button type="button" className="settings-menu-close" aria-label="Close menu" onClick={() => setAppSettingsOpen(false)}><X size={16}/></button></div>
-        <div className="settings-menu-group display-mode-group"><span>Display mode</span>
-          <div className="mode-toggle-box" role="group" aria-label="Display mode">
-            <button type="button" className={`mode-option compact-mode-option ${displayMode === 'compact' ? 'selected' : ''}`} aria-pressed={displayMode === 'compact'} onClick={() => setDisplayMode('compact')}><strong>Compact</strong><small>Preview only</small></button>
-            <button type="button" className={`mode-option standard-mode-option ${displayMode === 'standard' ? 'selected' : ''}`} aria-pressed={displayMode === 'standard'} onClick={() => setDisplayMode('standard')}><strong>Standard</strong><small>Create + Preview</small></button>
-          </div>
-        </div>
         <div className="settings-menu-group"><span>Account & support</span>
           <button type="button" role="menuitem" className="settings-card privacy-card" onClick={() => { setSettingsPopup('privacy'); setAppSettingsOpen(false); }}><span className="settings-card-icon"><ShieldCheck size={18}/></span><span><strong>Privacy &amp; Data</strong><small>Data use and protection</small></span></button>
           <button type="button" role="menuitem" className="settings-card support-card" onClick={() => { setSettingsPopup('support'); setAppSettingsOpen(false); }}><span className="settings-card-icon"><MessageCircle size={18}/></span><span><strong>Help &amp; Support</strong><small>Send a help request</small></span></button>
