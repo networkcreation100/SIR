@@ -108,13 +108,46 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       .split(' ')
       .filter(Boolean);
 
+    const collapseRepeatedSpeech = (text) => {
+      let words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (words.length < 2) return words.join(' ');
+      const normalized = () => words.map(word => word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''));
+      let changed = true;
+      let guard = 0;
+      while (changed && guard < 20) {
+        changed = false;
+        guard += 1;
+        const norm = normalized();
+        for (let i = 0; i < words.length - 1; i += 1) {
+          if (norm[i] && norm[i] === norm[i + 1]) {
+            words.splice(i + 1, 1);
+            changed = true;
+            break;
+          }
+          const maxLen = Math.min(10, Math.floor((words.length - i) / 2));
+          for (let len = maxLen; len >= 2; len -= 1) {
+            const left = norm.slice(i, i + len).join(' ');
+            const right = norm.slice(i + len, i + len + len).join(' ');
+            if (left && left === right) {
+              words.splice(i + len, len);
+              changed = true;
+              break;
+            }
+          }
+          if (changed) break;
+        }
+      }
+      return words.join(' ').replace(/\s+/g, ' ').trim();
+    };
+
+
     // Native Android restart cycles sometimes re-send the previous phrase plus
     // the new phrase (or just repeat the last partial). Merge by word overlap so
     // "call John" + "call John at three" becomes "call John at three", while
     // "call John" + "at three" becomes "call John at three" — no stutter text.
     const mergeSpeechText = (base, next) => {
       const a = String(base || '').replace(/\s+/g, ' ').trim();
-      const b = String(next || '').replace(/\s+/g, ' ').trim();
+      const b = collapseRepeatedSpeech(String(next || '').replace(/\s+/g, ' ').trim());
       if (!a) return b;
       if (!b) return a;
       const aw = a.split(/\s+/);
@@ -136,7 +169,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
 
     let lastPartialEmitted = '';
     const emitPartial = () => {
-      const combined = mergeSpeechText(committed, liveChunk);
+      const combined = collapseRepeatedSpeech(mergeSpeechText(committed, liveChunk));
       if (combined && combined !== lastPartialEmitted) {
         lastPartialEmitted = combined;
         onPartial && onPartial(combined);
@@ -166,7 +199,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
       if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
       cleanupListeners();
       commitLiveChunk();
-      const finalText = committed.trim();
+      const finalText = collapseRepeatedSpeech(committed.trim());
       if (finalText) {
         onFinal && onFinal(finalText);
       } else if (message) {

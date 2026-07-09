@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles, buildReminderSnapshotSvg, buildReminderMessageBody, normalizeReminder, urgencyLevels, isCircleGesture } from './reminderEngine.js';
+import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles, buildReminderSnapshotSvg, buildReminderMessageBody, normalizeReminder, urgencyLevels, isCircleGesture, createReminderId } from './reminderEngine.js';
 import './styles.css';
 import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
@@ -1278,10 +1278,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
 
   // Once location sharing is enabled, drop the "No location set" hint and show
   // the live status/route instead (label auto-hides if there is nothing to say).
-  const overlayLabel = isTrackingLocation
-    ? (routeMeta || status || 'Sharing your live location…')
-    : (isLocationUnset(location) ? 'No location set' : (onPinLocation && resolvedPin ? 'Drag the pin or tap the map to move it' : (routeMeta || status)));
-  const showOverlayLabel = !!(overlayLabel && overlayLabel.trim());
+  const overlayLabel = isTrackingLocation ? (routeMeta || status || 'Sharing your live location…') : '';
+  const showOverlayLabel = false;
   return <div className={`preview-live-map ${mapExpanded ? 'expanded' : ''} ${hideMapIcons ? 'hide-map-icons' : ''}`} aria-label="Live reminder map">
     {locationHelpOpen && <div className="settings-modal-backdrop location-help-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setLocationHelpOpen(false); }}>
       <section className="settings-modal location-help-modal" role="dialog" aria-modal="true" aria-label="Turn on location services">
@@ -1311,11 +1309,11 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       <button type="button" className="preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
         {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
       </button>
-      {!mapToolsOpen && <div className="preview-map-share-overlay">
-        {mapExpanded && <button type="button" className="preview-map-refresh" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
-        <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
-      </div>}
     </div>
+    {!mapToolsOpen && <div className="preview-map-share-below">
+      {mapExpanded && <button type="button" className="preview-map-refresh" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
+      <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
+    </div>}
   </div>;
 }
 
@@ -1458,27 +1456,28 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {ring && <div className="magic-ring"><Sparkles size={22}/><span>Ready to send</span></div>}
     {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
-      <span className="voice-star-wrap"><Sparkles size={15}/></span>
-      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== 'Meeting at the bar' ? editText : 'Speak to automatically display the date, time, and location.'))}</span>}
+      {!editMode && <span className="voice-star-wrap"><Sparkles size={15}/></span>}
+      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle ? editText : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim()) ? reminder.title : 'Speak to automatically display the date, time, and location.')))}</span>}
     </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className="preview-title">{reminder.title}</h3>}
     <div className={`due ${status.tone}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
     {editMode && <div className="preview-edit-schedule">
       <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
       <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
     </div>}
-    {editMode && recipientMode && <div className="recipient-inline-location-edit">
-      <label><span>Location</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder location" placeholder="Search address, venue, landmark, or paste link" /></label>
+    {editMode && onEditLocation && <div className="recipient-inline-location-edit preview-inline-location-edit">
+      <label><span>Address</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder address" placeholder="Type address, venue, landmark, or paste link" /></label>
     </div>}
-    <div className="inline-actions inline-actions-under-calendar">{!(recipientMode && editMode) && <button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>}{editMode && onToggleLocationTools && <button type="button" className="preview-location-tools-trigger" onClick={onToggleLocationTools}><MapPin size={15}/> Location tools</button>}</div>
-    {editMode && locationToolsOpen && <div className="preview-loctools-inline" aria-label="Location tools options">
-      {canEditMapPin && <button type="button" className="preview-loctools-option" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(true); }}><MapPin size={16}/> Drop pin on map</button>}
-      {onUseMyLocation && <button type="button" className="preview-loctools-option" onClick={() => { onUseMyLocation(); }}><LocateFixed size={16}/> Use my location</button>}
-      {recipientMode && onClearLocation && <button type="button" className="preview-loctools-option" onClick={() => { onClearLocation(); }}><X size={16}/> Clear location</button>}
+    <div className="inline-actions inline-actions-under-calendar">{!recipientMode && <button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>}</div>
+    {editMode && <div className="preview-loctools-inline compact-icon-tools" aria-label="Location tools options">
+      {canEditMapPin && <button type="button" className="preview-loctools-option compact-icon-tool" aria-label="Drop pin on map" title="Drop pin on map" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(true); }}><MapPin size={18}/><span>Pin</span></button>}
+      {onUseMyLocation && <button type="button" className="preview-loctools-option compact-icon-tool" aria-label="Use my location" title="Use my location" onClick={() => { onUseMyLocation(); }}><LocateFixed size={18}/><span>User Location</span></button>}
+      {canEditMapPin && <button type="button" className={`preview-loctools-option compact-icon-tool ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Show zoom-in and zoom-out map views" title="Zoom views" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(open => !open); }}><Maximize2 size={18}/><span>Expand</span></button>}
+      {recipientMode && onClearLocation && <button type="button" className="preview-loctools-option compact-icon-tool" aria-label="Clear location" title="Clear location" onClick={() => { onClearLocation(); }}><X size={18}/><span>Clear</span></button>}
       {locationStatus && <p className="preview-loctools-status">{locationStatus}</p>}
     </div>}
     {recipientMode && sharedSummary && <div className="shared-change-summary"><CheckCircle2 size={15}/><span>{sharedSummary}{sharedMeta && <em>Changed by {formatEditorName(sharedMeta.editor)} · {formatChangeTimestamp(sharedMeta.at)}</em>}</span></div>}
     {expanded && <div className="preview-summary">
-      <div className="preview-location-timezone-row"><p>{compactMode && onPinLocation ? <button type="button" className={`preview-location-pin-icon ${previewPinPickerOpen ? 'active' : ''}`} aria-label="Zoom-In and Zoom-Out Views" title="Zoom-In and Zoom-Out Views" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={15}/><span className="preview-location-pin-label">Zoom-In and Zoom-Out Views</span></button> : <MapPin size={15}/>} <span className={compactMode ? 'preview-location-text-compact' : ''}>{locationLabel}</span>{!compactMode && canEditMapPin && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>
+      {!compactMode && <div className="preview-location-timezone-row"><p><MapPin size={15}/> <span>{locationLabel}</span>{canEditMapPin && editMode && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>}
       {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
       {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
@@ -1487,7 +1486,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
         {onToggleRecipients && <button type="button" className="ghost recipient-visibility" onClick={onToggleRecipients}>Hide</button>}
       </div>}
     </div>}
-    {compactMode && !recipientMode ? (reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)) : <p className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><span>Edit the schedule, location, or location tracking on this device.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</p>}
+    {compactMode && !recipientMode ? (reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)) : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
   </article>;
 }
 
@@ -2083,7 +2082,9 @@ function App() {
   const recognitionRef = useRef(null);
   const previewVoiceTargetRef = useRef(null);
   const locationRecognitionRef = useRef(null);
+  const micStartPendingRef = useRef({ main: false, location: false });
   const compactAutoLocationAttempted = useRef(false);
+  const manualAddressGeocodeRef = useRef({ timer: null, seq: 0 });
   const fieldRefs = useRef([]);
   const savedReminder = reminders[0];
   const effectiveForm = useMemo(() => ({ ...form, title: form.title.trim() || placeholderReminderTitle }), [form]);
@@ -2145,6 +2146,40 @@ function App() {
   useEffect(() => {
     if (previewIndex >= previewReminders.length) setPreviewIndex(Math.max(previewReminders.length - 1, 0));
   }, [previewIndex, previewReminders.length]);
+  useEffect(() => {
+    const ref = manualAddressGeocodeRef.current;
+    if (ref.timer) {
+      clearTimeout(ref.timer);
+      ref.timer = null;
+    }
+    if (!previewEditOpen || isSharedRecipient) return undefined;
+    const address = (form.location || '').trim();
+    if (address.length < 5 || !hasMappableLocation({ location: address, locationPin: null })) return undefined;
+    const seq = ref.seq + 1;
+    ref.seq = seq;
+    ref.timer = window.setTimeout(async () => {
+      setLocationStatus('Finding address on map…');
+      const geocoded = await forwardGeocode(address);
+      if (manualAddressGeocodeRef.current.seq !== seq) return;
+      if (!geocoded) {
+        setLocationStatus('Address not found yet — keep typing or drop a pin.');
+        return;
+      }
+      setForm(prev => {
+        if ((prev.location || '').trim() !== address) return prev;
+        return { ...prev, locationPin: { lat: geocoded.lat, lng: geocoded.lng, accuracy: 0, address: geocoded.address || address } };
+      });
+      setMapOpen(true);
+      setLocationStatus(`Pin updated: ${geocoded.address || address}`);
+    }, 650);
+    return () => {
+      if (ref.timer) {
+        clearTimeout(ref.timer);
+        ref.timer = null;
+      }
+    };
+  }, [form.location, previewEditOpen, isSharedRecipient]);
+
 
   // On mobile, always open in compact view with the Preview panel at the top.
   // Runs once on mount (skipped for shared recipient links, which have their own flow).
@@ -2312,7 +2347,7 @@ function App() {
         version: sharedPackage.version,
         editor: 'shared-recipient',
         channel: 'shared-edit',
-        changed_fields: ['date', 'time', 'location', 'locationPin'],
+        changed_fields: ['title', 'date', 'time', 'location', 'locationPin'],
         payload
       });
       const record = data.reminder;
@@ -2422,6 +2457,10 @@ function App() {
 
 
   function startPreviewVoiceFill() {
+    if (recognitionRef.current || micStartPendingRef.current.main) {
+      startVoiceFill();
+      return;
+    }
     previewVoiceTargetRef.current = { index: currentPreviewIndex, id: previewReminder.id, reminder: previewReminder };
     setPreviewVoiceTargetIndex(currentPreviewIndex);
     // Clear the displayed reminder text so voice input starts fresh
@@ -2479,13 +2518,37 @@ function App() {
 
   function pauseBackgroundMusicForMicrophone() { /* background music removed */ }
 
+  function stopRecognitionController(ref) {
+    const controller = ref.current;
+    if (!controller) return;
+    try { controller.stop?.(); } catch {}
+    try { controller.abort?.(); } catch {}
+    ref.current = null;
+  }
+
+  function deactivateMicrophonesExcept(active) {
+    if (active !== 'main') {
+      stopRecognitionController(recognitionRef);
+      micStartPendingRef.current.main = false;
+      setListening(false);
+    }
+    if (active !== 'location') {
+      stopRecognitionController(locationRecognitionRef);
+      micStartPendingRef.current.location = false;
+      setLocationListening(false);
+    }
+  }
+
   async function startVoiceFill() {
     // Tap again while listening = stop (native mic now runs continuously).
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop?.(); } catch {}
-      recognitionRef.current = null;
+    if (recognitionRef.current || micStartPendingRef.current.main) {
+      stopRecognitionController(recognitionRef);
+      micStartPendingRef.current.main = false;
+      window.setTimeout(() => setListening(false), 150);
       return;
     }
+    deactivateMicrophonesExcept('main');
+    micStartPendingRef.current.main = true;
     pauseBackgroundMusicForMicrophone();
     setListening(true);
     setVoiceTranscript('');
@@ -2497,11 +2560,13 @@ function App() {
       onPartial: (t) => { if (t) setVoiceTranscript(t); },
       onFinal: (t) => { if (t) applyVoiceTranscript(t); },
       onError: (m) => setVoiceStatus(m),
-      onEnd: () => { recognitionRef.current = null; window.setTimeout(() => setListening(false), 300); },
+      onEnd: () => { recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); },
     });
+    micStartPendingRef.current.main = false;
     if (nativeCtrl) { if (!nativeCtrl.ended) recognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
+      micStartPendingRef.current.main = false;
       setListening(false);
       setVoiceStatus('Voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
       return;
@@ -2513,7 +2578,7 @@ function App() {
     recognition.continuous = true;
     recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Mic ready — speak naturally. Tap again to finish.'); };
     recognition.onerror = event => { window.setTimeout(() => setListening(false), 1000); setVoiceStatus(`Voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
-    recognition.onend = () => { recognitionRef.current = null; window.setTimeout(() => setListening(false), 300); };
+    recognition.onend = () => { recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); };
     recognition.onresult = event => {
       const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
       if (transcript) setVoiceTranscript(transcript);
@@ -2527,11 +2592,14 @@ function App() {
 
   async function startLocationVoiceFill() {
     // Tap again while listening = stop (native mic now runs continuously).
-    if (locationRecognitionRef.current) {
-      try { locationRecognitionRef.current.stop?.(); } catch {}
-      locationRecognitionRef.current = null;
+    if (locationRecognitionRef.current || micStartPendingRef.current.location) {
+      stopRecognitionController(locationRecognitionRef);
+      micStartPendingRef.current.location = false;
+      window.setTimeout(() => setLocationListening(false), 150);
       return;
     }
+    deactivateMicrophonesExcept('location');
+    micStartPendingRef.current.location = true;
     pauseBackgroundMusicForMicrophone();
     setAddressMicVisible(true);
     setLocationListening(true);
@@ -2543,17 +2611,19 @@ function App() {
       onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
       onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
       onError: (m) => setLocationStatus(m),
-      onEnd: () => { locationRecognitionRef.current = null; window.setTimeout(() => setLocationListening(false), 300); },
+      onEnd: () => { locationRecognitionRef.current = null; micStartPendingRef.current.location = false; window.setTimeout(() => setLocationListening(false), 300); },
     });
+    micStartPendingRef.current.location = false;
     if (nativeCtrl) { if (!nativeCtrl.ended) locationRecognitionRef.current = nativeCtrl; return; }
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) {
+      micStartPendingRef.current.location = false;
       setLocationListening(false);
       setLocationStatus('Address voice-to-text is not supported in this browser. Try Chrome, Edge, or Safari with microphone permission.');
       return;
     }
-    if (recognitionRef.current) recognitionRef.current.abort?.();
-    if (locationRecognitionRef.current) locationRecognitionRef.current.abort?.();
+    stopRecognitionController(recognitionRef);
+    stopRecognitionController(locationRecognitionRef);
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
@@ -2569,7 +2639,7 @@ function App() {
       window.setTimeout(() => setLocationListening(false), 500);
       setLocationStatus(`Address capture stopped: ${event.error || 'microphone unavailable'}.`);
     };
-    recognition.onend = () => { locationRecognitionRef.current = null; window.setTimeout(() => setLocationListening(false), 300); };
+    recognition.onend = () => { locationRecognitionRef.current = null; micStartPendingRef.current.location = false; window.setTimeout(() => setLocationListening(false), 300); };
     recognition.onresult = event => {
       const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
       if (!transcript) return;
@@ -2693,11 +2763,16 @@ function App() {
     setSendOpen(true);
   }
 
+  function makeFreshBlankReminder() {
+    return { ...initialReminder, id: createReminderId(), title: '', location: '', locationPin: null, sharedLocations: [], notes: '', date: '', time: '', sentAt: null, recipients: [] };
+  }
+
   // Called once the shared reminder has been created on the server (from RecipientPanel).
   // Stamps the sent card, moves it to the BACK of the preview stack, resets the composer
   // to a fresh blank Preview card at the front, and surfaces the confirmation screen.
   function handleReminderSent(sentReminder) {
     const stamped = normalizeReminder({ ...sentReminder, sentAt: sentReminder.sentAt || new Date().toISOString() });
+    const blankReminder = makeFreshBlankReminder();
     // Push the sent card into the saved stack so previewReminders renders it behind
     // the fresh active card (the active/composer card is always index 0).
     setReminders(prev => {
@@ -2707,8 +2782,13 @@ function App() {
       });
       return [stamped, ...withoutDup].slice(0, 6);
     });
-    // Reset the composer to a brand-new blank Preview card.
-    setForm({ ...initialReminder, id: undefined, title: '', location: '', locationPin: null, sharedLocations: [], notes: '', date: '', time: '' });
+    // Reset the composer to a brand-new blank Preview card. Apply once now and
+    // once on the next tick so late async voice/geocode callbacks cannot repaint
+    // the sent card as the active front card.
+    previewVoiceTargetRef.current = null;
+    setVoiceTranscript('');
+    setForm(blankReminder);
+    window.setTimeout(() => setForm(makeFreshBlankReminder()), 0);
     setPreviewIndex(0);
     setPreviewEditOpen(false);
     setPreviewLocationToolsOpen(false);
@@ -2760,7 +2840,13 @@ function App() {
           onLocationShared={saveSharedLocationUpdate}
           sharedSummary={lastSharedSummary}
           sharedMeta={lastSharedMeta}
-          onEdit={() => {
+          onEdit={async () => {
+            if (recipientEditOpen && !recipientPreviewMode) {
+              await saveSharedChanges();
+              setRecipientPreviewMode(false);
+              setPreviewLocationToolsOpen(false);
+              return;
+            }
             setForm(activeReminder);
             setRecipientEditOpen(true);
             setRecipientPreviewMode(false);
@@ -2874,7 +2960,7 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
