@@ -6,6 +6,7 @@ import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, IS
 import { getEmailValidationError, isEmail, isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows } from './recipientUtils.js';
 import { startNativeSpeech, isNativePlatform } from './nativeSpeech.js';
 import { scheduleReminderNotification, ensureNotifyPermission, syncAppBadge, notifyAppUpdateAvailable } from './nativeNotify.js';
+import { syncContacts, suggestContacts, contactsSupported, getContactsError } from './contactsSync.js';
 
 const PrivacyStatementPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.PrivacyStatementPopup })));
 const ContactSupportPopup = React.lazy(() => import('./settingsPopups.jsx').then(m => ({ default: m.ContactSupportPopup })));
@@ -26,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.13').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.14').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -784,12 +785,31 @@ function getInitials(name = '') {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-function createSharedLocationIcon(L, person, color) {
+function sharedPersonKey(person, index) {
+  return String(person?.id || person?.recipient || person?.name || `person-${index}`);
+}
+
+function createSharedLocationIcon(L, person, color, eta = null, options = {}) {
+  const { collapsed = false, personKey = '' } = options;
   const initials = getInitials(person.name);
   const safeName = escapeHtml(person.name || 'Shared user');
+  // eta = { distance, duration } strings, or null while the route is still resolving.
+  const etaLine = eta && eta.distance
+    ? `${escapeHtml(eta.distance)}${eta.duration ? ` &middot; ${escapeHtml(eta.duration)}` : ''}`
+    : 'Finding route&hellip;';
+  // Badge circle + attached info card. Tapping either one collapses the whole
+  // thing down to just the initials dot. The collapsed flag is passed in from a
+  // persistent ref so it survives icon re-renders when routes resolve.
+  const html = `<button type="button" class="sir-shared-badge${collapsed ? ' collapsed' : ''}" data-person-key="${escapeHtml(personKey)}" style="--route-color:${color}" aria-label="${safeName} route details" aria-expanded="${collapsed ? 'false' : 'true'}" title="Tap to collapse or expand">`
+    + `<span class="sir-shared-dot">${escapeHtml(initials)}</span>`
+    + `<span class="sir-shared-card">`
+      + `<span class="sir-shared-card-name"><span class="sir-shared-card-swatch"></span>${safeName}</span>`
+      + `<span class="sir-shared-card-eta">${etaLine}</span>`
+    + `</span>`
+  + `</button>`;
   return L.divIcon({
     className: 'sir-shared-location-wrap',
-    html: `<span class="sir-shared-location" style="--route-color:${color}" title="${safeName}">${escapeHtml(initials)}</span>`,
+    html,
     iconSize: [34, 34],
     iconAnchor: [17, 17]
   });
@@ -925,7 +945,7 @@ async function fetchShortestRoute(origin, destination) {
   return lookup.then(route => cloneRoute(route, 'network'));
 }
 
-function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared, hideMapIcons = false, syncBus = null, syncRole = 'in', initialZoom = null }) {
+function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared, onSendMapOnly, hideMapIcons = false, syncBus = null, syncRole = 'in', initialZoom = null }) {
   const mapNode = useRef(null);
   const map = useRef(null);
   const addressMarker = useRef(null);
@@ -933,6 +953,9 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const poiLayer = useRef(null);
   const sharedRouteLayer = useRef(null);
   const sharedMarkerLayer = useRef(null);
+  const badgeTapCleanup = useRef(null);
+  const badgeCollapsed = useRef({});
+  const badgeMarkerByKey = useRef({});
   const routeLayer = useRef(null);
   const routeRequest = useRef(0);
   const lastRouteAt = useRef(0);
@@ -950,6 +973,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [locationHelpOpen, setLocationHelpOpen] = useState(false);
   const [mapToolsOpen, setMapToolsOpen] = useState(false);
+  const [mapLocationWarning, setMapLocationWarning] = useState('');
   const [resolvedPin, setResolvedPin] = useState(pin || null);
   const fallback = [21.3069, -157.8583];
   const locationSettingsHelp = 'Location is disabled. Phone: open device Settings > Location and allow this app/browser. PC: open browser Site settings > Location > Allow, then tap Refresh.';
@@ -1019,6 +1043,23 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       poiLayer.current = L.layerGroup().addTo(map.current);
       sharedRouteLayer.current = L.layerGroup().addTo(map.current);
       sharedMarkerLayer.current = L.layerGroup().addTo(map.current);
+      // Delegated tap handler: a single tap on a shared badge (circle or card)
+      // toggles its collapsed state so it shrinks to just the initials dot.
+      const containerEl = map.current.getContainer();
+      const onBadgeTap = (event) => {
+        const badge = event.target && event.target.closest && event.target.closest('.sir-shared-badge');
+        if (!badge) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const key = badge.getAttribute('data-person-key') || '';
+        const next = !badge.classList.contains('collapsed');
+        // Persist the collapsed state so a route-resolve setIcon() re-render keeps it.
+        badgeCollapsed.current[key] = next;
+        badge.classList.toggle('collapsed', next);
+        badge.setAttribute('aria-expanded', next ? 'false' : 'true');
+      };
+      containerEl.addEventListener('click', onBadgeTap);
+      badgeTapCleanup.current = () => containerEl.removeEventListener('click', onBadgeTap);
       setMapReady(true);
       setStatus(resolvedPin ? 'Address map ready' : 'Add an address or pin to place the map marker');
       setTimeout(() => map.current?.invalidateSize(), 100);
@@ -1026,6 +1067,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     return () => {
       cancelled = true;
       unregisterSyncMap(syncBus, syncRole);
+      if (badgeTapCleanup.current) { badgeTapCleanup.current(); badgeTapCleanup.current = null; }
       if (watchId.current && navigator.geolocation) navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
       map.current?.remove();
@@ -1136,12 +1178,17 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     const destination = { lat: Number(resolvedPin.lat), lng: Number(resolvedPin.lng) };
     const destinationLatLng = [destination.lat, destination.lng];
     const boundsPoints = [destinationLatLng];
+    const badgeMarkers = [];
+    badgeMarkerByKey.current = {};
     people.forEach((person, index) => {
       const latLng = [Number(person.lat), Number(person.lng)];
       const color = person.color || sharedRouteColors[index % sharedRouteColors.length];
+      const personKey = sharedPersonKey(person, index);
       boundsPoints.push(latLng);
-      const marker = L.marker(latLng, { icon: createSharedLocationIcon(L, person, color), keyboard: false }).addTo(sharedMarkerLayer.current);
-      marker.bindTooltip(`${getInitials(person.name)} · ${person.name || 'Shared user'}`, { permanent: false });
+      const collapsed = !!badgeCollapsed.current[personKey];
+      const marker = L.marker(latLng, { icon: createSharedLocationIcon(L, person, color, null, { collapsed, personKey }), keyboard: false, riseOnHover: true }).addTo(sharedMarkerLayer.current);
+      badgeMarkers[index] = marker;
+      badgeMarkerByKey.current[personKey] = { marker, person, color };
     });
     if (!routeMeta && !isTrackingLocation) setStatus(`${people.length} shared locations · finding smart routes…`);
     fitOrLock(boundsPoints, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.2 });
@@ -1160,10 +1207,10 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       sharedRouteLayer.current.clearLayers();
       const routeBounds = [destinationLatLng];
       let fallbackCount = 0;
-      results.forEach(({ person, color, route, fallback }) => {
+      results.forEach(({ person, color, route, fallback }, index) => {
         if (fallback) fallbackCount += 1;
         route.coordinates.forEach(point => routeBounds.push(point));
-        const sharedRouteLine = L.polyline(route.coordinates, {
+        L.polyline(route.coordinates, {
           color,
           weight: fallback ? 3 : 5,
           opacity: fallback ? 0.48 : 0.86,
@@ -1172,7 +1219,16 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
           lineJoin: 'round',
           interactive: false
         }).addTo(sharedRouteLayer.current);
-        sharedRouteLine.bindTooltip(formatRouteEtaLabel(person, route), { permanent: true, direction: 'center', className: 'sir-route-label' });
+        // The ETA now lives in the attached badge card, not a centered line label.
+        const marker = badgeMarkers[index];
+        if (marker) {
+          const eta = fallback
+            ? { distance: 'Direct line', duration: '' }
+            : { distance: formatRouteDistance(route.distance), duration: formatRouteDuration(route.duration) };
+          const personKey = sharedPersonKey(person, index);
+          const collapsed = !!badgeCollapsed.current[personKey];
+          marker.setIcon(createSharedLocationIcon(L, person, color, eta, { collapsed, personKey }));
+        }
       });
       if (!routeMeta && !isTrackingLocation) {
         setStatus(fallbackCount ? `${people.length - fallbackCount} smart routes · ${fallbackCount} direct fallback${fallbackCount > 1 ? 's' : ''}` : `${people.length} shared locations · smart routes`);
@@ -1302,7 +1358,10 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     setIsTrackingLocation(false);
     setStatus(locationSettingsHelp);
     // Permission denied / position unavailable -> guide the user to Settings.
-    if (!error || error.code === 1 || error.code === 2) setLocationHelpOpen(true);
+    if (!error || error.code === 1 || error.code === 2) {
+      setMapLocationWarning('Enable Location in Settings.');
+      setLocationHelpOpen(true);
+    }
   }
 
   function startGpsWatch() {
@@ -1351,6 +1410,40 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       }
       handleGpsUnavailable(error);
     }, gpsOptions);
+  }
+
+  // Location Pin icon: recenter/zoom the map onto the reminder's pinned location.
+  function recenterOnPin() {
+    setMapLocationWarning('');
+    const L = leaflet.current;
+    if (!L || !map.current) { setStatus('Map is still loading. Try again in a moment.'); return; }
+    if (!resolvedPin) { setStatus('No pinned location yet · add an address or drop a pin first.'); return; }
+    map.current.setView([Number(resolvedPin.lat), Number(resolvedPin.lng)], 16, { animate: true });
+    setStatus('Centered on the reminder location.');
+  }
+
+  // User Location Pin icon: enable/share the user's live location. If device
+  // location services are off, show the red "Enable Location in Settings." warning.
+  async function handleUserLocationPin() {
+    setMapLocationWarning('');
+    if (!navigator.geolocation) {
+      setMapLocationWarning('Enable Location in Settings.');
+      setLocationHelpOpen(true);
+      return;
+    }
+    // Proactively detect a denied/blocked permission so we can show the warning
+    // immediately rather than waiting for a silent failure.
+    try {
+      if (navigator.permissions?.query) {
+        const st = await navigator.permissions.query({ name: 'geolocation' });
+        if (st?.state === 'denied') {
+          setMapLocationWarning('Enable Location in Settings.');
+          setLocationHelpOpen(true);
+          return;
+        }
+      }
+    } catch { /* permissions API optional */ }
+    trackGps();
   }
 
   function trackGps() {
@@ -1418,13 +1511,21 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
         <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
         <button type="button" className="preview-map-tool-btn" onClick={refreshLiveRoute}><RefreshCw size={14}/> Recenter</button>
       </div>}
-      <button type="button" className="preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
-        {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
-      </button>
+      <div className="preview-map-top-controls">
+        <button type="button" className="preview-map-icon-btn location-pin-btn" onClick={recenterOnPin} aria-label="Center on reminder location" title="Reminder location"><MapPin size={16}/></button>
+        <button type="button" className={`preview-map-icon-btn user-location-btn ${isTrackingLocation ? 'active' : ''}`} onClick={handleUserLocationPin} aria-pressed={isTrackingLocation} aria-label="Use my location" title="My location"><LocateFixed size={16}/></button>
+        <button type="button" className="preview-map-icon-btn preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
+          {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+        </button>
+      </div>
+      {mapLocationWarning && <div className="map-location-warning" role="alert"><AlertTriangle size={14}/> {mapLocationWarning}</div>}
     </div>
     {!mapToolsOpen && <div className="preview-map-share-below">
       {mapExpanded && <button type="button" className="preview-map-refresh" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
       <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
+    </div>}
+    {mapExpanded && onSendMapOnly && <div className="preview-map-send-below">
+      <button type="button" className="primary preview-map-send-maponly" onClick={() => onSendMapOnly()}><Send size={15}/> Send to Whom? · Map Only</button>
     </div>}
   </div>;
 }
@@ -1521,7 +1622,7 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText, sendPanelOpen = false }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText, sendPanelOpen = false, onSendMapOnly }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
@@ -1606,7 +1707,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {expanded && <div className="preview-summary">
       {!compactMode && <div className="preview-location-timezone-row"><p><MapPin size={15}/> <span>{locationLabel}</span>{canEditMapPin && editMode && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>}
       {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
@@ -1981,7 +2082,7 @@ function openDeliveryLinkAfterConfirmation(href) {
   window.setTimeout(waitForDismissal, 40);
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress }) {
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress, mapOnly = false }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -1993,6 +2094,16 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   const [recipientVoiceText, setRecipientVoiceText] = useState('');
   const preGeneratedCardRef = useRef({ key: '', promise: null, result: null, error: null });
   const [smartCardStatus, setSmartCardStatus] = useState('idle');
+  // Contact auto-sync + auto-suggest (native address book -> recipient field).
+  const [contactSuggestions, setContactSuggestions] = useState([]);
+  const [activeSuggestRow, setActiveSuggestRow] = useState(-1);
+  const [contactsReady, setContactsReady] = useState(false);
+  // Drag-handle sheet state: user can slide the panel down (minimized) and back
+  // up to full screen using the grabber bar at the top of the card.
+  const [sheetMinimized, setSheetMinimized] = useState(false);
+  const dragStartYRef = useRef(null);
+  const dragDeltaRef = useRef(0);
+  const [dragOffset, setDragOffset] = useState(0);
   const { values: recipients, phones, emails, invalid, contacts, labels: recipientLabels, duplicates } = classifyRecipientRows(recipientRows);
   const namedRecipientCount = contacts.filter(contact => contact.name).length;
   const valid = recipients.length > 0 && invalid.length === 0;
@@ -2171,6 +2282,61 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     if (initialRecipientText) commitRecipientRows(rowsFromRecipientText(initialRecipientText).map(row => smartFormatRecipients(row)));
   }, [initialRecipientText]);
 
+  // Auto-sync the user's contact list once the Send Options panel mounts so the
+  // Recipient field can auto-recognize and auto-suggest names/phones/emails.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await syncContacts();
+        if (!cancelled) setContactsReady(entries.length > 0);
+      } catch { /* contacts optional; typed recognition still works */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Recompute suggestions as the user types in a recipient row.
+  function refreshSuggestions(rowIndex, text) {
+    if (!contactsSupported()) { setContactSuggestions([]); setActiveSuggestRow(-1); return; }
+    const q = String(text || '').trim();
+    if (!q || q.length < 1) { setContactSuggestions([]); setActiveSuggestRow(-1); return; }
+    const matches = suggestContacts(q, 6);
+    setContactSuggestions(matches);
+    setActiveSuggestRow(matches.length ? rowIndex : -1);
+  }
+
+  function applyContactSuggestion(rowIndex, entry) {
+    const next = [...recipientRows];
+    next[rowIndex] = entry.fill;
+    commitRecipientRows(next.map(row => smartFormatRecipients(row)), entry.name ? `Filled ${entry.name} from your contacts.` : 'Filled from your contacts.');
+    setContactSuggestions([]);
+    setActiveSuggestRow(-1);
+  }
+
+  // --- Drag-handle sheet: slide the card down to minimize, back up to full. ---
+  function handleDragStart(clientY) {
+    dragStartYRef.current = clientY;
+    dragDeltaRef.current = 0;
+  }
+  function handleDragMove(clientY) {
+    if (dragStartYRef.current == null) return;
+    const delta = clientY - dragStartYRef.current;
+    dragDeltaRef.current = delta;
+    // Only allow visual drag downward from full, or upward from minimized.
+    const bounded = sheetMinimized ? Math.max(-260, Math.min(0, delta)) : Math.max(0, Math.min(320, delta));
+    setDragOffset(bounded);
+  }
+  function handleDragEnd() {
+    if (dragStartYRef.current == null) return;
+    const delta = dragDeltaRef.current;
+    dragStartYRef.current = null;
+    dragDeltaRef.current = 0;
+    setDragOffset(0);
+    if (!sheetMinimized && delta > 90) setSheetMinimized(true);
+    else if (sheetMinimized && delta < -60) setSheetMinimized(false);
+  }
+  function toggleSheet() { setSheetMinimized(v => !v); setDragOffset(0); }
+
   useEffect(() => {
     if (!valid || !recipients.length) {
       preGeneratedCardRef.current = { key: '', promise: null, result: null, error: null };
@@ -2279,15 +2445,15 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       try { onSent && onSent(sentStampedReminder); } catch (_) { /* ignore */ }
 
       if (phones.length) {
-        if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails));
+        if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails, { mapOnly }));
         setMessage(`${buildComposeConfirmationMessage('text', phones)}${emails.length ? ' Email recipient also recognized — open email after the text app if needed.' : ''}`);
-        openDeliveryLinkAfterConfirmation(createSmsLink(sharedReminder, phones));
+        openDeliveryLinkAfterConfirmation(createSmsLink(sharedReminder, phones, { mapOnly }));
         return;
       }
 
       if (emails.length) {
         setMessage(buildComposeConfirmationMessage('email', emails));
-        openDeliveryLinkAfterConfirmation(createMailto(sharedReminder, emails));
+        openDeliveryLinkAfterConfirmation(createMailto(sharedReminder, emails, { mapOnly }));
         return;
       }
     } catch (error) {
@@ -2299,18 +2465,23 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
 
   const previewAction = onPreview || onClose;
 
-  return <aside className={`send-panel ${collapsed ? 'collapsed-preview' : ''}`} aria-label={collapsed ? 'Collapsed send options panel' : 'Send options panel'}>
-    <div className="panel-header compact send-options-header"><div><p className="eyebrow tiny">Send options</p><h2>Send reminder</h2></div><div className="send-options-header-actions"><button type="button" className={`mic-button recipient-mic-button ${recipientListening ? 'listening' : ''}`} style={recipientListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={startRecipientVoiceSearch} aria-label="Speak or search contact"><Mic size={17}/></button><button type="button" className="send-panel-close" aria-label="Close Send Reminder panel" onClick={onClose}><X size={16}/></button></div></div>
-    <p className="panel-copy">Type or speak names with phone numbers or email addresses.</p>
-    {recipientVoiceText && <p className="recipient-voice-status">Heard: “{recipientVoiceText}”</p>}
+  return <aside className={`send-panel ${collapsed ? 'collapsed-preview' : ''} ${sheetMinimized ? 'sheet-minimized' : ''}`} style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined} aria-label={collapsed ? 'Collapsed send options panel' : 'Send options panel'}>
+    <div className="send-sheet-handle" role="button" tabIndex={0} aria-label={sheetMinimized ? 'Slide up to expand Send Options' : 'Slide down to minimize Send Options'} aria-expanded={!sheetMinimized} onClick={toggleSheet} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); } }} onPointerDown={e => { e.currentTarget.setPointerCapture?.(e.pointerId); handleDragStart(e.clientY); }} onPointerMove={e => handleDragMove(e.clientY)} onPointerUp={handleDragEnd} onPointerCancel={handleDragEnd} onTouchStart={e => handleDragStart(e.touches[0]?.clientY)} onTouchMove={e => handleDragMove(e.touches[0]?.clientY)} onTouchEnd={handleDragEnd}><span className="send-sheet-grabber" /></div>
+    <div className="panel-header compact send-options-header"><div><p className="eyebrow tiny">Send options</p><h2>Send reminder</h2></div><div className="send-options-header-actions"><button type="button" className="send-panel-close" aria-label="Close Send Reminder panel" onClick={onClose}><X size={16}/></button></div></div>
+    {mapOnly && <div className="map-only-badge"><MapPin size={13}/> Map Only — sending just the location map</div>}
+    <p className="panel-copy">Type a name with a phone number or email address. Matching contacts fill in automatically.</p>
     <Field label={<span className="recipient-label-row"><span>Recipient</span><span className="recipient-show-toggle"><input type="checkbox" checked={showRecipientsInPreview} onChange={e => onShowRecipientsChange?.(e.target.checked)} aria-label="Show recipient in Preview" /> Show</span></span>} error={invalid.length ? 'Fix the red recipient before sending.' : ''} hint={valid ? `${recipients.length} validated recipient${recipients.length === 1 ? '' : 's'}${namedRecipientCount ? ` · ${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} identified` : ''} · ${phones.length ? `${phones.length} text message${phones.length === 1 ? '' : 's'}` : ''}${phones.length && emails.length ? ' · ' : ''}${emails.length ? `${emails.length} email${emails.length === 1 ? '' : 's'}` : ''}` : 'One contact per row. Add another row for multiple contacts.'}>
       <div className="recipient-row-list">
         {recipientRows.map((row, index) => {
           const rowClassified = classifyRecipients(row);
           const rowInvalid = row.trim() && (rowClassified.invalid.length || rowClassified.values.length > 1);
-          return <div className={`recipient-entry-row ${rowInvalid ? 'invalid' : ''}`} key={index}>
-            <input value={row} onChange={e => updateRecipientRow(index, e.target.value)} onPaste={e => handleRecipientPaste(index, e)} onBlur={e => updateRecipientRow(index, e.target.value, true)} aria-label={`Recipient ${index + 1}`} placeholder={index === 0 ? 'Name + one phone/email' : 'Another phone/email'} />
+          const showSuggest = activeSuggestRow === index && contactSuggestions.length > 0;
+          return <div className={`recipient-entry-row ${rowInvalid ? 'invalid' : ''} ${showSuggest ? 'suggesting' : ''}`} key={index}>
+            <input value={row} onChange={e => { updateRecipientRow(index, e.target.value); refreshSuggestions(index, e.target.value); }} onPaste={e => handleRecipientPaste(index, e)} onFocus={e => refreshSuggestions(index, e.target.value)} onBlur={e => { window.setTimeout(() => setActiveSuggestRow(current => current === index ? -1 : current), 150); updateRecipientRow(index, e.target.value, true); }} aria-label={`Recipient ${index + 1}`} autoComplete="off" placeholder={index === 0 ? 'Name + one phone/email' : 'Another phone/email'} />
             {recipientRows.length > 1 && <button type="button" className="ghost recipient-row-remove" aria-label={`Remove recipient ${index + 1}`} onClick={() => removeRecipientRow(index)}><X size={14}/></button>}
+            {showSuggest && <ul className="recipient-suggest-list" role="listbox" aria-label="Contact suggestions">
+              {contactSuggestions.map((entry, si) => <li key={`${entry.type}-${entry.value}-${si}`} role="option" aria-selected="false"><button type="button" className="recipient-suggest-item" onMouseDown={e => { e.preventDefault(); applyContactSuggestion(index, entry); }}>{entry.name ? <span className="suggest-name">{entry.name}</span> : null}<span className="suggest-value">{entry.value}</span></button></li>)}
+            </ul>}
           </div>;
         })}
         <button type="button" className="secondary full add-recipient-row" onClick={addRecipientRow}>Add another contact</button>
@@ -2333,6 +2504,7 @@ function App() {
   const [form, setForm] = useState(initialReminder);
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
+  const [sendMapOnly, setSendMapOnly] = useState(false);
   const [sendCollapsed, setSendCollapsed] = useState(false);
   const [sentConfirmation, setSentConfirmation] = useState(null);
   const [updateAlert, setUpdateAlert] = useState(null);
@@ -3379,16 +3551,16 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendMapOnly(false); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onSendMapOnly={() => { setSendMapOnly(true); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} onClose={() => { setSendOpen(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} onClose={() => { setSendOpen(false); setSendMapOnly(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); setSendMapOnly(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
       </div>
     </div>}
     {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label={sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Reminder send error' : 'Reminder sent'} onClick={() => { if (!sentConfirmation.pending) setSentConfirmation(null); }}>

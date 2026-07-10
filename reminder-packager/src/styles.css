@@ -187,7 +187,7 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
 
 /* Center Preview Reminder text blocks */
 .simplified-preview .preview-recipient-note{text-align:center!important;align-items:center!important}.simplified-preview .preview-recipient-note span{display:block;text-align:center!important}
-.sir-shared-location-wrap{background:transparent;border:0}.sir-shared-location{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--route-color,#2563eb);color:#fff;border:3px solid #fff;box-shadow:0 8px 18px rgba(15,23,42,.28);font-size:11px;font-weight:950;letter-spacing:.03em;line-height:1;text-transform:uppercase}
+.sir-shared-location-wrap{background:transparent;border:0;overflow:visible}.sir-shared-badge{position:absolute;top:0;left:0;display:flex;align-items:center;gap:7px;padding:0;margin:0;border:0;background:transparent;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;font:inherit}.sir-shared-dot{flex:0 0 auto;width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:var(--route-color,#2563eb);color:#fff;border:3px solid #fff;box-shadow:0 8px 18px rgba(15,23,42,.28);font-size:11px;font-weight:950;letter-spacing:.03em;line-height:1;text-transform:uppercase}.sir-shared-card{display:flex;flex-direction:column;gap:1px;background:rgba(255,255,255,.97);border:1px solid rgba(148,163,184,.5);border-radius:12px;padding:5px 10px 5px 9px;box-shadow:0 8px 20px rgba(15,23,42,.2);transform-origin:left center;transition:opacity .16s ease,transform .16s ease;overflow:hidden}.sir-shared-card-name{display:flex;align-items:center;gap:5px;color:#0f172a;font-size:11px;font-weight:900;line-height:1.15;letter-spacing:.01em}.sir-shared-card-swatch{flex:0 0 auto;width:8px;height:8px;border-radius:999px;background:var(--route-color,#2563eb)}.sir-shared-card-eta{color:#475569;font-size:10.5px;font-weight:800;line-height:1.15;padding-left:13px}.sir-shared-badge.collapsed{gap:0}.sir-shared-badge.collapsed .sir-shared-card{display:none}.sir-shared-badge.collapsed .sir-shared-dot{box-shadow:0 8px 18px rgba(15,23,42,.28),0 0 0 2px var(--route-color,#2563eb)}
 .preview-map-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.preview-map-actions button{white-space:nowrap}
 .share-location-button.inactive{color:#2563eb;border-color:rgba(37,99,235,.35);background:rgba(37,99,235,.08)}.share-location-button.active{color:#fff;border-color:#2563eb;background:#2563eb}.share-location-button svg{stroke-width:2.35}.share-location-button.active svg{filter:drop-shadow(0 1px 2px rgba(15,23,42,.22))}
 
@@ -237,8 +237,7 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
 /* Preview manual pin control */
 .preview-location-timezone-row p{gap:8px;flex-wrap:wrap}.preview-pin-location-button{display:inline-flex;align-items:center;gap:4px;border:1px solid #bfdbfe;background:#eff6ff;color:#2563eb;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800;line-height:1}.preview-pin-location-button:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(37,99,235,.14)}.preview-pin-picker{margin-top:10px;margin-bottom:12px}
 @media(prefers-color-scheme:dark) and (min-width:99999px){.preview-pin-location-button{background:#172554;color:#bfdbfe;border-color:#1d4ed8}}
-.sir-route-label{background:rgba(255,255,255,.94);border:1px solid rgba(148,163,184,.55);border-radius:999px;color:#0f172a;font-size:10px;font-weight:900;padding:2px 7px;box-shadow:0 6px 16px rgba(15,23,42,.16);backdrop-filter:blur(8px)}
-@media(prefers-color-scheme:dark) and (min-width:99999px){.sir-route-label{background:rgba(15,23,42,.92);border-color:#334155;color:#f8fafc}}
+/* route ETA now lives in the attached .sir-shared-card badge */
 
 .preview-location-pin-icon{appearance:none;border:0;background:transparent;color:#64748b;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:999px;padding:0;margin:0 2px 0 0;vertical-align:middle;cursor:pointer;transition:color .18s ease,background .18s ease,transform .18s ease}.preview-location-pin-icon:hover,.preview-location-pin-icon:focus-visible{color:#dc2626;background:rgba(220,38,38,.1);outline:none;transform:translateY(-1px)}.preview-location-pin-icon.active{color:#dc2626;background:rgba(220,38,38,.12)}
 .preview-location-timezone-row .preview-location-pin-icon.active,.preview-location-timezone-row .preview-location-pin-icon.active svg{color:#dc2626!important;stroke:#dc2626!important}.preview-location-timezone-row .preview-location-pin-icon:hover svg,.preview-location-timezone-row .preview-location-pin-icon:focus-visible svg{stroke:#dc2626!important}
@@ -2105,3 +2104,48 @@ body.sir-send-collapsed{overflow-y:auto;}
 .reminder-card.simplified-preview .due.schedule-default .preview-importance{
   color:#6b7280!important;
 }
+
+/* ── Send Options: drag-handle sheet + contact auto-suggest (v1.0.14) ── */
+.send-panel{transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.send-sheet-handle{display:flex;align-items:center;justify-content:center;height:22px;margin:-8px 0 6px;cursor:grab;touch-action:none;user-select:none}
+.send-sheet-handle:active{cursor:grabbing}
+.send-sheet-grabber{display:block;width:44px;height:5px;border-radius:999px;background:#d1d5db;transition:background .15s ease,width .15s ease}
+.send-sheet-handle:hover .send-sheet-grabber{background:#9ca3af;width:52px}
+.send-panel.sheet-minimized{transform:translateY(calc(100% - 64px))}
+.send-panel.sheet-minimized > *:not(.send-sheet-handle):not(.send-options-header){opacity:0;pointer-events:none}
+.send-panel.sheet-minimized .send-options-header h2{font-size:16px}
+.send-panel.sheet-minimized .send-sheet-grabber{background:#f97316}
+/* Contact auto-suggest dropdown */
+.recipient-entry-row{position:relative}
+.recipient-suggest-list{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:20;list-style:none;margin:0;padding:6px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 18px 40px rgba(15,23,42,.16);max-height:220px;overflow-y:auto;display:grid;gap:2px}
+.recipient-suggest-item{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:transparent;border:0;padding:9px 11px;border-radius:10px;text-align:left;cursor:pointer}
+.recipient-suggest-item:hover,.recipient-suggest-item:focus{background:#fff7ed}
+.recipient-suggest-item .suggest-name{font-weight:800;font-size:13px;color:#111827}
+.recipient-suggest-item .suggest-value{font-size:12px;color:#6b7280}
+
+/* ── Expanded map card: taller map + top icon row + Map Only send (v1.0.14) ── */
+/* Change 1: expanded map occupies more of the screen (smaller inset, less reserved chrome). */
+.preview-live-map.expanded{inset:6px!important;border-radius:20px}
+.preview-live-map.expanded .preview-map-shell{min-height:calc(100vh - 74px)!important;height:calc(100vh - 74px)!important}
+@media(max-width:520px){
+  .preview-live-map.expanded{inset:4px!important}
+  .preview-live-map.expanded .preview-map-shell{min-height:calc(100vh - 84px)!important;height:calc(100vh - 84px)!important}
+}
+/* Change 2: Location Pin + User Location Pin + Minimize aligned horizontally, evenly. */
+.preview-map-top-controls{position:absolute;top:10px;right:10px;z-index:600;display:inline-flex;align-items:center;gap:8px}
+.preview-live-map.expanded .preview-map-top-controls{top:14px;right:14px}
+.preview-map-icon-btn{width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(226,232,240,.9);background:rgba(255,255,255,.96);color:#0f172a;box-shadow:0 10px 22px rgba(15,23,42,.16)}
+.preview-map-icon-btn:hover{transform:translateY(-1px);box-shadow:0 14px 28px rgba(15,23,42,.2)}
+.preview-map-icon-btn.location-pin-btn{color:#c2410c}
+.preview-map-icon-btn.user-location-btn.active{background:#dcfce7;color:#16a34a;border-color:#86efac}
+/* the expand button now sits inside the flex row; neutralize its old absolute position */
+.preview-map-top-controls .preview-map-expand{position:static!important;top:auto;right:auto;box-shadow:0 10px 22px rgba(15,23,42,.16)}
+.preview-map-top-controls .preview-map-expand span{display:none}
+/* Change 3: red location warning. */
+.map-location-warning{position:absolute;top:60px;right:10px;left:10px;z-index:600;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 12px;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:13px;font-weight:800;box-shadow:0 12px 26px rgba(185,28,28,.16)}
+.preview-live-map.expanded .map-location-warning{top:66px;right:14px;left:14px}
+/* Change 4: Map Only send button pinned at the bottom of the expanded card. */
+.preview-map-send-below{position:absolute;left:0;right:0;bottom:0;z-index:600;padding:10px 14px;display:flex;justify-content:center;background:linear-gradient(to top,rgba(255,255,255,.98),rgba(255,255,255,.86) 70%,transparent)}
+.preview-map-send-maponly{width:min(100%,420px);min-height:48px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+/* Map Only badge in Send Options. */
+.map-only-badge{display:inline-flex;align-items:center;gap:6px;margin:2px 0 8px;padding:7px 11px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;font-size:12px;font-weight:900}

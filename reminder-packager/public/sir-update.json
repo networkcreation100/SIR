@@ -1,17 +1,17 @@
 {
-  "latestVersion": "1.0.13",
+  "latestVersion": "1.0.14",
   "message": "A new SIR update is ready to download.",
   "downloadUrls": {
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "web": "https://networkcreation100.github.io/SIR/"
   },
   "releaseNotes": [
-    "More reliable reminder sharing — automatic backup server keeps links working even under heavy load",
-    "Smarter map routing with an extra fallback so directions keep loading",
-    "Same single-card view, send confirmation, and email/SMS delivery you already know"
+    "Multi-user map cards — each shared person now shows their name and live ETA in a tidy card at their location",
+    "Tap a person's card on the map to collapse it to a dot, tap again to expand — keeps a crowded map readable",
+    "Same reliable reminder sharing, single-card view, and email/SMS delivery you already know"
   ],
-  "updatedAt": "2026-07-10T09:23:00Z",
-  "releaseDate": "2026-07-09",
+  "updatedAt": "2026-07-10T19:40:00Z",
+  "releaseDate": "2026-07-10",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "webUrl": "https://networkcreation100.github.io/SIR/"
 }
