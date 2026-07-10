@@ -1,17 +1,17 @@
 {
-  "latestVersion": "1.0.11",
+  "latestVersion": "1.0.12",
   "message": "A new SIR update is ready to download.",
   "downloadUrls": {
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "web": "https://networkcreation100.github.io/SIR/"
   },
   "releaseNotes": [
-    "Send no longer freezes on the notification step — delivery always completes",
-    "Sending reminder confirmation always reaches a dismissible Done state",
-    "Blank card date/time stays gray until you set it by voice or editing",
-    "Updated mic prompt: Tap the Mic to speak the date, time, and location"
+    "Cleaner single-card view — only your current reminder card is shown",
+    "Tap the X in the top-left to instantly start a fresh blank card",
+    "Sent and older cards no longer pile up in the background, saving storage",
+    "Send confirmation and email/SMS delivery work exactly as before"
   ],
-  "updatedAt": "2026-07-09T22:59:00Z",
+  "updatedAt": "2026-07-10T07:08:00Z",
   "releaseDate": "2026-07-09",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "webUrl": "https://networkcreation100.github.io/SIR/"

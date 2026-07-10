@@ -2380,15 +2380,12 @@ function App() {
   }, [effectiveForm, form.urgencySelected]);
   const smartInsight = useMemo(() => deriveSmartInsights(form), [form]);
   const previewReminders = useMemo(() => {
-    const cards = [activeReminder];
-    reminders.forEach(item => {
-      const normalized = normalizeReminder(item);
-      if (!cards.some(card => card.id === normalized.id || sameReminderCard(card, normalized))) cards.push(normalized);
-    });
-    const blankBackgroundCard = { ...initialReminder, id: BACKGROUND_BLANK_REMINDER_ID, title: '', location: '', locationPin: null, sharedLocations: [], notes: '', urgency: 'low', urgencySelected: false, scheduleTouched: false };
-    if (!cards.some(card => card.id === BACKGROUND_BLANK_REMINDER_ID) && !cards.some(isBlankPreviewCard)) cards.push(blankBackgroundCard);
-    return cards.slice(0, 7);
-  }, [activeReminder, reminders]);
+    // Single-card display: only the current default/editable card is ever shown.
+    // Sent and previously-saved cards still live in `reminders` state and go
+    // through the full v1.0.11 send/confirmation flow — they are simply not
+    // rendered in the on-screen stack. This intentionally hides the deck.
+    return [activeReminder];
+  }, [activeReminder]);
   const currentPreviewIndex = Math.min(previewIndex, Math.max(previewReminders.length - 1, 0));
   const previewReminder = previewReminders[currentPreviewIndex] || activeReminder;
   const mapEmbedUrl = useMemo(() => {
@@ -2409,7 +2406,12 @@ function App() {
   const compactMode = displayMode !== 'standard';
 
 
-  useEffect(() => { writeStoredValue(PREVIEW_REMINDERS_KEY, reminders.slice(0, 7)); }, [reminders]);
+  // Single-card mode: persist only the current card so no hidden stack accumulates in storage.
+  useEffect(() => { writeStoredValue(PREVIEW_REMINDERS_KEY, reminders.slice(0, 1)); }, [reminders]);
+  // One-time cleanup: trim any previously-saved hidden stack down to a single card to reclaim storage.
+  useEffect(() => {
+    setReminders(prev => (prev.length > 1 ? prev.slice(0, 1) : prev));
+  }, []);
   useEffect(() => { writeStoredValue(PREVIEW_RECIPIENTS_KEY, previewRecipients); }, [previewRecipients]);
   useEffect(() => { writeStoredValue(PREVIEW_SETTINGS_KEY, { showRecipientsInPreview, activeIndex: currentPreviewIndex, previewTimezone, displayMode }); }, [showRecipientsInPreview, currentPreviewIndex, previewTimezone, displayMode]);
   useEffect(() => {
@@ -2500,30 +2502,16 @@ function App() {
   }
 
   function deletePreviewCard() {
-    const cardToDelete = previewReminder;
-    const deletingActive = currentPreviewIndex === 0 || sameReminderCard(activeReminder, cardToDelete);
-    const remainingSaved = reminders.filter(item => !sameReminderCard(normalizeReminder(item), cardToDelete));
-    if (deletingActive) {
-      if (isBlankPreviewCard(cardToDelete) && !cardToDelete?.sentAt) {
-        setForm(makeFreshBlankReminder());
-        setReminders(remainingSaved);
-        setPreviewIndex(0);
-      } else {
-        const nextCard = previewReminders.find((card, index) => index !== currentPreviewIndex && !sameReminderCard(card, cardToDelete));
-        if (nextCard) {
-          setForm(nextCard);
-          setReminders(remainingSaved);
-          setPreviewIndex(0);
-        } else {
-          setForm(makeFreshBlankReminder());
-          setReminders([]);
-          setPreviewIndex(0);
-        }
-      }
-    } else {
-      setReminders(remainingSaved);
-      setPreviewIndex(index => Math.max(0, Math.min(index, Math.max(previewReminders.length - 2, 0))));
-    }
+    // Single-card mode: the upper-left X always clears the current card back to
+    // a fresh blank card ready for the next reminder.
+    previewVoiceTargetRef.current = null;
+    setVoiceTranscript('');
+    setForm(makeFreshBlankReminder());
+    window.setTimeout(() => setForm(makeFreshBlankReminder()), 0);
+    setReminders([]);
+    setPreviewIndex(0);
+    setPreviewEditOpen(false);
+    setPreviewLocationToolsOpen(false);
     setPreviewMotionKey(key => key + 1);
   }
 
@@ -3034,7 +3022,7 @@ function App() {
   function saveReminder() {
     if (!formValid) return;
     const normalized = normalizeReminder({ ...form, title: form.title.trim() || placeholderReminderTitle, version: (savedReminder?.version || 0) + 1 });
-    setReminders(prev => [normalized, ...prev.slice(0, 6)]);
+    setReminders([normalized]); // single-card mode: never accumulate a hidden stack
     setPreviewIndex(0);
     setForm(normalized);
   }
@@ -3356,7 +3344,7 @@ function App() {
         {sentConfirmation.statusText && <p className="sent-confirm-status" role="status" aria-live="polite">{sentConfirmation.statusText}</p>}
         {sentConfirmation.pending && <p className="sent-confirm-countdown">Still working — about {Math.max(1, Number(sentConfirmation.etaSeconds || 1))}s remaining.</p>}
         {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-time">{formatSentStamp(sentConfirmation.sentAt)}</p>}
-        {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-hint">This reminder moved to the back of your cards. Use the navigation to review it.</p>}
+        {!sentConfirmation.pending && !sentConfirmation.error && <p className="sent-confirm-hint">A fresh blank card is ready for your next reminder.</p>}
         {sentConfirmation.pending && <div className="sent-progress-steps" aria-label="Send progress"><span className={['preparing','server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Preparing</span><span className={['server-generating','server-generated','notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Server</span><span className={['notification','delivery'].includes(sentConfirmation.phase) ? 'active' : ''}>Notify</span><span className={sentConfirmation.phase === 'delivery' ? 'active' : ''}>Link</span></div>}
         {!sentConfirmation.pending && <button type="button" className="primary full sent-confirm-done" onClick={() => setSentConfirmation(null)}>{sentConfirmation.error ? 'Done' : 'Done'}</button>}
       </div>
