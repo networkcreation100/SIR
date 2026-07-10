@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.14').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.15').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -2508,6 +2508,7 @@ function App() {
   const [sendCollapsed, setSendCollapsed] = useState(false);
   const [sentConfirmation, setSentConfirmation] = useState(null);
   const [updateAlert, setUpdateAlert] = useState(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
   // the preview card underneath gets bottom padding and can scroll fully clear
   // of the fixed bar (mirrors the recipient-edit bottom-bar behavior).
@@ -2532,8 +2533,6 @@ function App() {
       const latestVersion = String(manifest.latestVersion || manifest.version || '').replace(/^v/i, '');
       if (!latestVersion) return;
       if (!force && compareAppVersions(latestVersion, CURRENT_APP_VERSION) <= 0) return;
-      const dismissedVersion = window.localStorage.getItem('sir:update-alert-dismissed-version');
-      if (!force && dismissedVersion === latestVersion) return;
       const info = {
         latestVersion,
         currentVersion: CURRENT_APP_VERSION,
@@ -3469,22 +3468,24 @@ function App() {
   }
 
   return <main className="app-shell">
-    {updateAlert && <div className="update-notification-card" role="status" aria-live="polite">
-      <div className="update-notification-icon"><Bell size={18}/><span className="update-notification-badge">1</span></div>
-      <div className="update-notification-copy">
-        <strong>{updateAlert.title}</strong>
-        <span>{updateAlert.message}</span>
-        <small>Installed: {updateAlert.currentVersion} · Available: {updateAlert.latestVersion}</small>
-      </div>
-      <div className="update-notification-actions">
-        {updateAlert.downloadUrl && <button type="button" className="update-notification-download" onClick={() => { window.location.href = updateAlert.downloadUrl; }}>Download</button>}
-        <button type="button" className="update-notification-close" aria-label="Dismiss update notification" onClick={() => { try { if (!updateAlert.forceTest) window.localStorage.setItem('sir:update-alert-dismissed-version', updateAlert.latestVersion); } catch {} setUpdateAlert(null); }}><X size={15}/></button>
+    {updateAlert && updateDialogOpen && <div className="update-dialog-overlay" role="presentation" onClick={() => setUpdateDialogOpen(false)}>
+      <div className="update-dialog-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="update-dialog-close" aria-label="Close update dialog" onClick={() => setUpdateDialogOpen(false)}><X size={16}/></button>
+        <div className="update-dialog-icon"><Bell size={22}/><span className="update-dialog-badge">1</span></div>
+        <strong id="update-dialog-title" className="update-dialog-title">{updateAlert.title}</strong>
+        <span className="update-dialog-message">{updateAlert.message}</span>
+        <small className="update-dialog-versions">Installed: {updateAlert.currentVersion} · Available: {updateAlert.latestVersion}</small>
+        {updateAlert.releaseNotes && Array.isArray(updateAlert.releaseNotes) && updateAlert.releaseNotes.length > 0 && <ul className="update-dialog-notes">{updateAlert.releaseNotes.slice(0,3).map((n,i) => <li key={i}>{n}</li>)}</ul>}
+        {updateAlert.downloadUrl && <button type="button" className="update-dialog-download" onClick={() => { window.location.href = updateAlert.downloadUrl; }}>Download</button>}
       </div>
     </div>}
     <section className="hero app-settings-hero">
       <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1></div>
-      <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : 'Open app settings'} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/></button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
+      <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : `Open app settings${updateAlert ? ' — update available' : ''}`} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/>{updateAlert && <span className="app-settings-update-dot" aria-hidden="true" />}</button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
         <div className="settings-menu-head"><strong>Menu</strong><button type="button" className="settings-menu-close" aria-label="Close menu" onClick={() => setAppSettingsOpen(false)}><X size={16}/></button></div>
+        {updateAlert && <div className="settings-menu-group">
+          <button type="button" role="menuitem" className="settings-card update-card" onClick={() => { setUpdateDialogOpen(true); setAppSettingsOpen(false); }}><span className="settings-card-icon update-card-icon"><Bell size={18}/><span className="settings-card-badge">1</span></span><span><strong>Update available</strong><small>Version {updateAlert.latestVersion} is ready</small></span></button>
+        </div>}
         <div className="settings-menu-group"><span>Account & support</span>
           <button type="button" role="menuitem" className="settings-card support-card" onClick={() => { setSettingsPopup('support'); setAppSettingsOpen(false); }}><span className="settings-card-icon"><MessageCircle size={18}/></span><span><strong>Help &amp; Support</strong><small>Send a help request</small></span></button>
         </div>
