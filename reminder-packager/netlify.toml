@@ -1,0 +1,24 @@
+# Netlify config for SIR fallback backend.
+# This project deploys ONLY the serverless functions as a credit-overflow fallback
+# for the Base44 backend. The app itself stays hosted on GitHub Pages.
+
+[build]
+  # No site build needed — functions only. Publish an empty dir so Netlify has something to serve.
+  command = "echo 'SIR Netlify fallback — functions only'"
+  publish = "netlify/public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Friendly redirects so the function paths are stable regardless of Netlify's
+# auto-generated /.netlify/functions/ prefix.
+[[redirects]]
+  from = "/api/reminder-sync"
+  to = "/.netlify/functions/reminder-sync"
+  status = 200
+
+[[redirects]]
+  from = "/api/route-proxy"
+  to = "/.netlify/functions/route-proxy"
+  status = 200

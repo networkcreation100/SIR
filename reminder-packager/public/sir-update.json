@@ -1,17 +1,16 @@
 {
-  "latestVersion": "1.0.12",
+  "latestVersion": "1.0.13",
   "message": "A new SIR update is ready to download.",
   "downloadUrls": {
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "web": "https://networkcreation100.github.io/SIR/"
   },
   "releaseNotes": [
-    "Cleaner single-card view — only your current reminder card is shown",
-    "Tap the X in the top-left to instantly start a fresh blank card",
-    "Sent and older cards no longer pile up in the background, saving storage",
-    "Send confirmation and email/SMS delivery work exactly as before"
+    "More reliable reminder sharing — automatic backup server keeps links working even under heavy load",
+    "Smarter map routing with an extra fallback so directions keep loading",
+    "Same single-card view, send confirmation, and email/SMS delivery you already know"
   ],
-  "updatedAt": "2026-07-10T07:08:00Z",
+  "updatedAt": "2026-07-10T09:23:00Z",
   "releaseDate": "2026-07-09",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "webUrl": "https://networkcreation100.github.io/SIR/"

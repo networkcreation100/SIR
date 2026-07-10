@@ -19,6 +19,7 @@
     "@capacitor/core": "latest",
     "@capacitor/ios": "latest",
     "@capacitor/local-notifications": "^7.0.7",
+    "@netlify/blobs": "^10.7.9",
     "@vitejs/plugin-react": "latest",
     "leaflet": "^1.9.4",
     "react": "latest",

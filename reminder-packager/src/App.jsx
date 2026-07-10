@@ -14,6 +14,11 @@ const PremiumMembershipPopup = React.lazy(() => import('./settingsPopups.jsx').t
 const placeholderReminderTitle = 'Meeting at the bar';
 const REMINDER_SYNC_URL = 'https://superagent-934909c8.base44.app/functions/reminderSync';
 const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRouteProxy';
+// Netlify fallback backend — used automatically only if the Base44 backend fails
+// (e.g. integration credits exhausted / 5xx / network). Base44 stays primary.
+const NETLIFY_FALLBACK_BASE = 'https://sir-fallback.netlify.app';
+const NETLIFY_REMINDER_SYNC_URL = `${NETLIFY_FALLBACK_BASE}/api/reminder-sync`;
+const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // Permanent PUBLIC web page that renders a shared reminder from its ?share= token.
 // Share links MUST point here — never at the app's own origin. In the published
 // native app window.location is an internal Capacitor origin (Android
@@ -21,7 +26,7 @@ const ROUTE_PROXY_URL = 'https://superagent-934909c8.base44.app/functions/sirRou
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.11').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.13').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -306,8 +311,8 @@ function formatSentStamp(value) {
   }).format(date);
 }
 
-async function reminderSync(body) {
-  const response = await fetch(REMINDER_SYNC_URL, {
+async function callReminderSyncEndpoint(url, body) {
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
@@ -320,6 +325,36 @@ async function reminderSync(body) {
     throw error;
   }
   return data;
+}
+
+// A failure is a genuine BUSINESS result (expired / view-only / version conflict /
+// bad request) that the Netlify fallback would answer identically — so we must NOT
+// retry those. We only fall back on INFRASTRUCTURE failure: backend down, credits
+// exhausted (402/429), 5xx, or a network error (status undefined).
+function shouldTryFallback(error) {
+  const status = error && error.status;
+  if (status === undefined || status === null) return true; // network error / fetch threw
+  if (status >= 500) return true;                            // backend error
+  if (status === 402 || status === 429) return true;         // payment/credits/rate limit
+  if (status === 404 && (error.data && error.data.error !== 'Reminder not found')) return true;
+  return false; // 400/403/404-not-found/409/410 are real answers — don't retry
+}
+
+async function reminderSync(body) {
+  try {
+    return await callReminderSyncEndpoint(REMINDER_SYNC_URL, body);
+  } catch (primaryError) {
+    if (!shouldTryFallback(primaryError)) throw primaryError;
+    try {
+      const fallback = await callReminderSyncEndpoint(NETLIFY_REMINDER_SYNC_URL, body);
+      if (fallback && typeof fallback === 'object') fallback.viaFallback = true;
+      return fallback;
+    } catch (fallbackError) {
+      // Prefer surfacing the fallback's business error if it produced one; otherwise
+      // rethrow the original so behavior matches the pre-fallback app.
+      throw (fallbackError && fallbackError.status ? fallbackError : primaryError);
+    }
+  }
 }
 
 async function attachHostedPreviewImage(sharedReminder, token, currentVersion) {
@@ -842,6 +877,27 @@ async function fetchShortestRoute(origin, destination) {
         proxySource: proxyData.source || 'sirRouteProxy'
       };
     } catch {
+      // Tier 2: Netlify fallback route proxy (used if Base44 route proxy fails).
+      try {
+        const nfResponse = await fetch(NETLIFY_ROUTE_PROXY_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ origin: safeOrigin, destination: safeDestination, profile: 'driving' })
+        });
+        const nfData = await nfResponse.json().catch(() => ({}));
+        const nfRoute = nfData?.route;
+        if (!nfResponse.ok || nfData.ok === false || !nfRoute?.coordinates?.length) throw new Error(nfData.error || 'Netlify route proxy failed');
+        parsedRoute = {
+          coordinates: nfRoute.coordinates.map(([lat, lng]) => [Number(lat), Number(lng)]),
+          distance: Number(nfRoute.distance || 0),
+          duration: Number(nfRoute.duration || 0),
+          proxySource: nfData.source || 'netlify-route-proxy'
+        };
+        routeLookupCache.set(key, { at: Date.now(), route: parsedRoute });
+        return parsedRoute;
+      } catch {
+        // fall through to direct OSRM below
+      }
       const originLngLat = `${safeOrigin.lng},${safeOrigin.lat}`;
       const destinationLngLat = `${safeDestination.lng},${safeDestination.lat}`;
       const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${originLngLat};${destinationLngLat}?overview=full&geometries=geojson&steps=false`);
