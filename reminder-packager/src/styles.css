@@ -2345,3 +2345,131 @@ body.sir-send-collapsed{overflow-y:auto;}
 .preview-map-icon-btn.location-pin-btn.route-active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important;box-shadow:0 10px 22px rgba(37,99,235,.4)!important}
 .preview-live-map.expanded .preview-map-icon-btn.location-pin-btn.route-active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
 
+
+/* v1.0.16e: shared card uses preview-card text only; real text is centered, blank stays blank. */
+.recipient-shell .preview-title{
+  text-align:center!important;
+  width:100%;
+  padding:0 38px!important;
+}
+.recipient-shell .preview-title.empty-title{
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  line-height:0!important;
+}
+
+/* v1.0.16e: shared card map controls — one horizontal row, no overlap with old tools toggle. */
+.recipient-shell .preview-map-tools-toggle,
+.recipient-shell .preview-map-tools-bar{
+  display:none!important;
+}
+.recipient-shell .preview-map-top-controls{
+  left:0!important;
+  right:0!important;
+  top:12px!important;
+  justify-content:center!important;
+  align-items:center!important;
+  gap:14px!important;
+  width:100%!important;
+  pointer-events:none;
+}
+.recipient-shell .preview-map-top-controls .preview-map-icon-btn{
+  width:44px!important;
+  height:44px!important;
+  flex:0 0 44px!important;
+  pointer-events:auto;
+}
+@media(max-width:380px){
+  .recipient-shell .preview-map-top-controls{gap:10px!important;top:10px!important}
+  .recipient-shell .preview-map-top-controls .preview-map-icon-btn{width:42px!important;height:42px!important;flex-basis:42px!important}
+}
+
+/* v1.0.16f: keep the centered shared-title box itself aligned to the card. */
+.recipient-shell .preview-title{
+  box-sizing:border-box!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+}
+
+/* v1.0.16g: shared-card top map icons get hover/focus labels without crowding the row. */
+.recipient-shell .preview-map-top-controls .preview-map-icon-btn{
+  position:relative!important;
+  overflow:visible!important;
+}
+.recipient-shell .preview-map-top-controls .preview-map-icon-label{
+  display:block!important;
+  position:absolute;
+  left:50%;
+  top:calc(100% + 8px);
+  transform:translate(-50%,-4px);
+  opacity:0;
+  pointer-events:none;
+  white-space:nowrap;
+  padding:5px 8px;
+  border-radius:999px;
+  background:rgba(15,23,42,.92);
+  color:#fff;
+  font-size:11px;
+  font-weight:900;
+  line-height:1;
+  box-shadow:0 10px 24px rgba(15,23,42,.24);
+  transition:opacity .14s ease,transform .14s ease;
+  z-index:900;
+}
+.recipient-shell .preview-map-top-controls .preview-map-icon-btn:hover .preview-map-icon-label,
+.recipient-shell .preview-map-top-controls .preview-map-icon-btn:focus-visible .preview-map-icon-label,
+.recipient-shell .preview-map-top-controls .preview-map-icon-btn:active .preview-map-icon-label{
+  opacity:1;
+  transform:translate(-50%,0);
+}
+
+/* v1.0.16g: shared-card maximum map view is map-first — hide bottom address/info strip and let the map fill that space. */
+.recipient-shell .preview-live-map.expanded .preview-map-expanded-info{
+  display:none!important;
+}
+.recipient-shell .preview-live-map.expanded .preview-map-shell{
+  flex:1 1 auto!important;
+  height:auto!important;
+  min-height:0!important;
+}
+.recipient-shell .preview-live-map.expanded .preview-map-canvas,
+.recipient-shell .preview-live-map.expanded .leaflet-container{
+  height:100%!important;
+  min-height:100%!important;
+}
+.recipient-shell .preview-live-map.expanded .preview-map-share-below{
+  position:absolute!important;
+  left:0;
+  right:0;
+  bottom:0;
+  z-index:650;
+  padding:12px 16px calc(18px + env(safe-area-inset-bottom,0px))!important;
+  margin:0!important;
+  background:linear-gradient(to top,rgba(255,255,255,.96) 0%,rgba(255,255,255,.78) 58%,transparent 100%)!important;
+  pointer-events:none;
+}
+.recipient-shell .preview-live-map.expanded .preview-map-share-below button{
+  pointer-events:auto;
+}
+
+/* v1.0.16h: shared-card max/min control belongs in the map's upper-right corner. */
+.recipient-shell .preview-map-top-controls .preview-map-expand{
+  position:absolute!important;
+  top:0!important;
+  right:14px!important;
+  margin:0!important;
+}
+.recipient-shell .preview-map-top-controls .preview-map-expand .preview-map-icon-label{
+  left:auto!important;
+  right:0!important;
+  transform:translate(0,-4px)!important;
+}
+.recipient-shell .preview-map-top-controls .preview-map-expand:hover .preview-map-icon-label,
+.recipient-shell .preview-map-top-controls .preview-map-expand:focus-visible .preview-map-icon-label,
+.recipient-shell .preview-map-top-controls .preview-map-expand:active .preview-map-icon-label{
+  transform:translate(0,0)!important;
+}
+@media(max-width:380px){
+  .recipient-shell .preview-map-top-controls .preview-map-expand{right:10px!important}
+}

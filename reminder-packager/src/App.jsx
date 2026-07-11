@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.16').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.17').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -394,6 +394,11 @@ const BACKGROUND_BLANK_REMINDER_ID = 'sir-preview-background-blank';
 function isBlankPreviewCard(reminder) {
   const title = String(reminder?.title || '').trim();
   return (!title || title === placeholderReminderTitle) && isLocationUnset(reminder?.location) && !String(reminder?.notes || '').trim() && !reminder?.locationPin;
+}
+
+function cleanPreviewCardTitle(value) {
+  const title = String(value || '').trim();
+  return (!title || title === placeholderReminderTitle || title === 'Untitled Reminder') ? '' : title;
 }
 
 
@@ -1681,6 +1686,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   const scheduleBorder = urgencyMeta?.color || '#3b82f6';
   const accent = '#22c55e';
   const typedTitle = String(editText || reminder.title || '').trim();
+  const displayTitle = recipientMode ? cleanPreviewCardTitle(typedTitle) : reminder.title;
   const spokenTitle = String(compactVoiceTranscript || '').trim();
   const cardHasUserInput = Boolean(
     spokenTitle ||
@@ -1731,7 +1737,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
       {!editMode && <span className="voice-star-wrap"><Sparkles size={15}/></span>}
       {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle ? editText : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim()) ? reminder.title : 'Tap the Mic to speak the date, time, and location')))}</span>}
-    </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className="preview-title">{reminder.title}</h3>}
+    </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className={`preview-title ${recipientMode && !displayTitle ? 'empty-title' : ''}`}>{displayTitle}</h3>}
     <div className={`due ${status.tone} ${scheduleIsDefault ? 'schedule-default' : ''} ${scheduleTouched ? 'schedule-active' : ''}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
     {editMode && <div className="preview-edit-schedule">
       <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
@@ -1752,7 +1758,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {expanded && <div className="preview-summary">
       {!compactMode && <div className="preview-location-timezone-row"><p><MapPin size={15}/> <span>{locationLabel}</span>{canEditMapPin && editMode && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>}
       {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} expandedInfo={recipientMode ? { title: reminder.title || 'Shared reminder', due: dueLabel, address: locationLabel } : null} /></div>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} expandedInfo={recipientMode ? { title: cleanPreviewCardTitle(reminder.title), due: dueLabel, address: locationLabel } : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
@@ -2160,7 +2166,10 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
     const deliveryRecipients = recipients;
     const channel = phones.length ? 'sms-share' : 'email-share';
-    const payload = normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' });
+    const payload = {
+      ...normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' }),
+      title: cleanPreviewCardTitle(reminder.title)
+    };
     const key = JSON.stringify({
       title: payload.title,
       date: payload.date,
@@ -2807,8 +2816,9 @@ function App() {
         if (cancelled) return;
         const record = data.reminder;
         const payload = record.payload || {};
-        setForm({ ...normalizeReminder(payload), ...payload, title: payload.title || placeholderReminderTitle });
-        setReminders([record.payload || payload]);
+        const sharedPayload = { ...normalizeReminder(payload), ...payload, title: cleanPreviewCardTitle(payload.title) };
+        setForm(sharedPayload);
+        setReminders([sharedPayload]);
         setSharedPackage({ token: record.share_token, version: record.version, lastEditor: record.last_editor, editCount: record.edit_history?.length || 0, expiresAt: record.expires_at });
         setLastSharedSummary('');
         setLastSharedMeta(null);
@@ -2858,6 +2868,7 @@ function App() {
     };
     const payload = normalizeReminder({
       ...activeReminder,
+      title: cleanPreviewCardTitle(activeReminder.title),
       share_token: sharedPackage.token,
       version: sharedPackage.version,
       permission: 'shared-edit',
@@ -2891,7 +2902,10 @@ function App() {
     if (!sharedPackage || !formValid) return;
     setSharedStatus('Saving shared schedule/location changes…');
     try {
-      const payload = normalizeReminder({ ...activeReminder, share_token: sharedPackage.token, version: sharedPackage.version, permission: 'shared-edit' });
+      const payload = {
+        ...normalizeReminder({ ...activeReminder, share_token: sharedPackage.token, version: sharedPackage.version, permission: 'shared-edit' }),
+        title: cleanPreviewCardTitle(activeReminder.title)
+      };
       const data = await reminderSync({
         action: 'save',
         share_token: sharedPackage.token,
