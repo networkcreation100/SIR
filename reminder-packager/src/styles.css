@@ -2192,3 +2192,156 @@ body.sir-send-collapsed{overflow-y:auto;}
 .preview-map-send-maponly{width:min(100%,420px);min-height:48px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 /* Map Only badge in Send Options. */
 .map-only-badge{display:inline-flex;align-items:center;gap:6px;margin:2px 0 8px;padding:7px 11px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;font-size:12px;font-weight:900}
+
+
+/* ============================================================
+   v1.0.16 — Shared card: enlarged map + compacted text section
+   Scope: .recipient-shell (the standalone shared/recipient card).
+   Goal: pull title + date/time + address up tight, in the street-
+   address font style, so the map gets much more vertical room.
+   ============================================================ */
+.recipient-shell .reminder-card{padding:20px 22px 20px}
+.recipient-shell .preview-card-toolbar{height:14px;margin-bottom:4px}
+
+/* Title — compact "Meeting at the bar" */
+.recipient-shell .preview-title{
+  font-size:19px!important;
+  line-height:1.15!important;
+  font-weight:800!important;
+  letter-spacing:-.01em!important;
+  margin:2px 0 9px!important;
+  text-align:left!important;
+}
+
+/* Date/time pill — compressed, address-style font */
+.recipient-shell .due{
+  margin:0 0 7px!important;
+  padding:8px 11px!important;
+  border-radius:12px!important;
+  font-size:13px!important;
+  font-weight:800!important;
+  gap:7px!important;
+}
+.recipient-shell .due svg{width:15px;height:15px}
+.recipient-shell .due span{font-size:13px!important;font-weight:800!important}
+
+/* Address row — same compact street-address font, pulled up tight */
+.recipient-shell .preview-summary{margin:0!important;gap:0!important}
+.recipient-shell .preview-location-timezone-row{margin:0 0 8px!important}
+.recipient-shell .preview-location-timezone-row>p{
+  gap:6px!important;
+  margin:0!important;
+  font-size:13px!important;
+  font-weight:700!important;
+  line-height:1.3!important;
+  color:#334155!important;
+  align-items:center!important;
+}
+.recipient-shell .preview-location-timezone-row>p svg{width:15px;height:15px;flex:0 0 auto}
+
+/* Map — enlarged for clarity/emphasis */
+.recipient-shell .preview-live-map{margin:0 0 10px!important}
+.recipient-shell .preview-map-canvas{height:300px!important;min-height:300px!important}
+/* keep expanded (fullscreen-ish) taller too */
+.recipient-shell .preview-live-map.expanded .preview-map-canvas{height:64vh!important;min-height:360px!important}
+
+/* trim the interactive note + edit button spacing so map stays hero */
+.recipient-shell .preview-recipient-note{margin-top:8px!important}
+
+@media(max-width:420px){
+  .recipient-shell .preview-map-canvas{height:290px!important;min-height:290px!important}
+}
+
+
+/* ============================================================
+   v1.0.16 — Shared card EXPANDED map layout
+   - labeled icon buttons pinned at the top
+   - remove the extra center gear toggle in expanded mode
+   - compact info (title/date-time/address) below the map
+   ============================================================ */
+
+/* Remove the extra center gear toggle when the map is expanded */
+.preview-live-map.expanded .preview-map-tools-toggle{display:none!important}
+
+/* Top control cluster: keep at top-right, add labels in expanded mode */
+.preview-map-top-controls{position:absolute;top:12px;right:12px;z-index:600;display:flex;gap:8px;align-items:flex-start}
+.preview-map-icon-label{display:none}
+/* Expanded map icons: SAME styling as the preview card (round white icon buttons, no labels) */
+.preview-live-map.expanded .preview-map-top-controls{top:16px;right:16px;left:16px;gap:12px;justify-content:center}
+.preview-live-map.expanded .preview-map-icon-label{display:none!important}
+.preview-live-map.expanded .preview-map-icon-btn{width:44px;height:44px}
+.preview-live-map.expanded .preview-map-icon-btn.location-pin-btn{color:#c2410c}
+.preview-live-map.expanded .preview-map-icon-btn.user-location-btn.active{background:#dcfce7;color:#16a34a;border-color:#86efac}
+
+/* Give the expanded info section room: shrink the map shell a bit */
+.preview-live-map.expanded.has-expanded-info .preview-map-shell,
+.preview-live-map.expanded .preview-map-shell{min-height:0!important}
+.preview-live-map.expanded{overflow:hidden}
+.preview-live-map.expanded .preview-map-shell{flex:1 1 auto!important;height:auto!important}
+
+/* Compact info section BELOW the map (expanded shared view) */
+.preview-map-expanded-info{
+  flex:0 0 auto;background:#fff;border-top:1px solid #e5e7eb;
+  padding:18px 16px 10px;display:grid;gap:6px;justify-items:center;text-align:center;
+}
+.preview-map-expanded-info .preview-map-expanded-title{
+  margin:0;font-size:17px;font-weight:800;line-height:1.2;color:#111827;letter-spacing:-.01em;text-align:center;
+}
+.preview-map-expanded-info .preview-map-expanded-line{
+  margin:0;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:700;line-height:1.3;color:#334155;text-align:center;
+}
+.preview-map-expanded-info .preview-map-expanded-line svg{flex:0 0 auto;color:#2563eb}
+
+/* Keep the share/refresh + send buttons compact under the info */
+.preview-live-map.expanded .preview-map-share-below,
+.preview-live-map.expanded .preview-map-send-below{flex:0 0 auto;padding:8px 14px 12px}
+
+
+/* v1.0.16 fix: remove empty gap — stack map then info tightly (no flex-grow push) */
+.preview-live-map.expanded{display:flex;flex-direction:column}
+.preview-live-map.expanded .preview-map-shell{
+  flex:0 0 auto!important;
+  height:auto!important;min-height:0!important;
+}
+.preview-live-map.expanded .preview-map-canvas,
+.preview-live-map.expanded .leaflet-container{
+  height:56vh!important;min-height:340px!important;
+}
+.preview-map-expanded-info{margin-top:0}
+
+/* Close/minimize button gets the same labeled pill treatment + never clips */
+.preview-live-map.expanded .preview-map-expand{
+  position:static!important;box-shadow:0 8px 20px rgba(15,23,42,.18);
+}
+
+
+/* v1.0.16b: max out the map, center + drop the info lower for balance */
+.preview-live-map.expanded .preview-map-canvas,
+.preview-live-map.expanded .leaflet-container{height:62vh!important;min-height:360px!important}
+.preview-live-map.expanded .preview-map-expanded-info{padding-top:20px}
+.preview-live-map.expanded .preview-map-share-below,
+.preview-live-map.expanded .preview-map-send-below{
+  display:flex;justify-content:center;flex-wrap:wrap;gap:10px;padding:6px 16px 14px;
+}
+
+
+/* v1.0.16c: lift the expanded-map "Send to Whom?" button up so it's fully visible
+   on mobile (clear of the browser nav bar / home indicator safe area). */
+.preview-live-map.expanded .preview-map-send-below{
+  position:absolute!important;left:0;right:0;bottom:0;z-index:650;
+  padding:10px 16px calc(18px + env(safe-area-inset-bottom,0px))!important;
+  background:linear-gradient(to top,#fff 62%,rgba(255,255,255,.9) 86%,transparent)!important;
+}
+.preview-live-map.expanded .preview-map-send-maponly{
+  width:min(100%,420px);min-height:50px;box-shadow:0 14px 30px rgba(249,115,22,.34);
+}
+/* map fills the whole expanded area; the Send button floats over its bottom edge */
+.preview-live-map.expanded .preview-map-shell{flex:1 1 auto!important;min-height:0!important;height:auto!important}
+.preview-live-map.expanded .preview-map-canvas,
+.preview-live-map.expanded .leaflet-container{height:100%!important;min-height:420px!important}
+
+
+/* v1.0.16d: pin icon acts as a ROUTE toggle. Active = blue filled circle. */
+.preview-map-icon-btn.location-pin-btn.route-active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important;box-shadow:0 10px 22px rgba(37,99,235,.4)!important}
+.preview-live-map.expanded .preview-map-icon-btn.location-pin-btn.route-active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
+

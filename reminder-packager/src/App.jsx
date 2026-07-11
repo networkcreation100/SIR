@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.15').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.16').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -945,7 +945,7 @@ async function fetchShortestRoute(origin, destination) {
   return lookup.then(route => cloneRoute(route, 'network'));
 }
 
-function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared, onSendMapOnly, hideMapIcons = false, syncBus = null, syncRole = 'in', initialZoom = null }) {
+function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, onLocationShared, onSendMapOnly, hideMapIcons = false, syncBus = null, syncRole = 'in', initialZoom = null, expandedInfo = null }) {
   const mapNode = useRef(null);
   const map = useRef(null);
   const addressMarker = useRef(null);
@@ -964,6 +964,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const lastGpsPoint = useRef(null);
   const sharedLocationSentAt = useRef(0);
   const watchId = useRef(null);
+  const routeVisibleRef = useRef(false);
   const leaflet = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
@@ -971,6 +972,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
   const [routeMeta, setRouteMeta] = useState('');
   const [poiCount, setPoiCount] = useState(0);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [routeVisible, setRouteVisible] = useState(false);
+  useEffect(() => { routeVisibleRef.current = routeVisible; }, [routeVisible]);
   const [locationHelpOpen, setLocationHelpOpen] = useState(false);
   const [mapToolsOpen, setMapToolsOpen] = useState(false);
   const [mapLocationWarning, setMapLocationWarning] = useState('');
@@ -1210,15 +1213,17 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       results.forEach(({ person, color, route, fallback }, index) => {
         if (fallback) fallbackCount += 1;
         route.coordinates.forEach(point => routeBounds.push(point));
-        L.polyline(route.coordinates, {
-          color,
-          weight: fallback ? 3 : 5,
-          opacity: fallback ? 0.48 : 0.86,
-          dashArray: fallback ? '6 8' : undefined,
-          lineCap: 'round',
-          lineJoin: 'round',
-          interactive: false
-        }).addTo(sharedRouteLayer.current);
+        if (routeVisibleRef.current) {
+          L.polyline(route.coordinates, {
+            color,
+            weight: fallback ? 3 : 5,
+            opacity: fallback ? 0.48 : 0.86,
+            dashArray: fallback ? '6 8' : undefined,
+            lineCap: 'round',
+            lineJoin: 'round',
+            interactive: false
+          }).addTo(sharedRouteLayer.current);
+        }
         // The ETA now lives in the attached badge card, not a centered line label.
         const marker = badgeMarkers[index];
         if (marker) {
@@ -1236,7 +1241,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
       fitOrLock(routeBounds, { padding: [28, 28], maxZoom: 17, animate: true, duration: 0.22 });
     });
     return () => { cancelled = true; };
-  }, [sharedLocations, resolvedPin, mapReady, routeMeta, isTrackingLocation]);
+  }, [sharedLocations, resolvedPin, mapReady, routeMeta, isTrackingLocation, routeVisible]);
 
   useEffect(() => {
     const refreshMapLayout = () => {
@@ -1268,6 +1273,7 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
 
   async function drawSmartRoute(userLatLng) {
     const L = leaflet.current;
+    if (!routeVisibleRef.current) { return; }
     if (!L || !map.current || !resolvedPin) {
       setStatus('My location enabled · add a pinned destination for routing');
       return;
@@ -1412,6 +1418,40 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
     }, gpsOptions);
   }
 
+  // Pin icon = route toggle. Tap ON -> button turns blue, show + refresh the route
+  // to the destination. Tap again -> hide the route. Does NOT move the red destination pin.
+  function clearAllRouteLayers() {
+    if (routeLayer.current && map.current) { try { map.current.removeLayer(routeLayer.current); } catch (e) {} }
+    routeLayer.current = null;
+    if (sharedRouteLayer.current) { try { sharedRouteLayer.current.clearLayers(); } catch (e) {} }
+    setRouteMeta('');
+  }
+
+  function toggleRouteView() {
+    setMapLocationWarning('');
+    if (!mapReady) { setStatus('Map is still loading. Try again in a moment.'); return; }
+    if (!resolvedPin) { setStatus('No pinned location yet · add an address or drop a pin first.'); return; }
+    if (routeVisible) {
+      // turn OFF: hide route, stop tracking
+      setRouteVisible(false);
+      setIsTrackingLocation(false);
+      if (watchId.current) { try { navigator.geolocation.clearWatch(watchId.current); } catch (e) {} }
+      watchId.current = null;
+      clearAllRouteLayers();
+      // keep the red destination pin centered
+      try { map.current.setView([Number(resolvedPin.lat), Number(resolvedPin.lng)], map.current.getZoom(), { animate: true }); } catch (e) {}
+      setStatus('Route hidden. Tap the pin again to show the route.');
+      return;
+    }
+    // turn ON: show + refresh route to the destination
+    setRouteVisible(true);
+    if (lastGpsPoint.current) {
+      drawSmartRoute([lastGpsPoint.current.lat, lastGpsPoint.current.lng]);
+    }
+    refreshLiveRoute();
+    setStatus('Showing route to the destination…');
+  }
+
   // Location Pin icon: recenter/zoom the map onto the reminder's pinned location.
   function recenterOnPin() {
     setMapLocationWarning('');
@@ -1511,21 +1551,26 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
         <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
         <button type="button" className="preview-map-tool-btn" onClick={refreshLiveRoute}><RefreshCw size={14}/> Recenter</button>
       </div>}
-      <div className="preview-map-top-controls">
-        <button type="button" className="preview-map-icon-btn location-pin-btn" onClick={recenterOnPin} aria-label="Center on reminder location" title="Reminder location"><MapPin size={16}/></button>
-        <button type="button" className={`preview-map-icon-btn user-location-btn ${isTrackingLocation ? 'active' : ''}`} onClick={handleUserLocationPin} aria-pressed={isTrackingLocation} aria-label="Use my location" title="My location"><LocateFixed size={16}/></button>
+      <div className={`preview-map-top-controls ${mapExpanded ? 'labeled' : ''}`}>
+        <button type="button" className={`preview-map-icon-btn location-pin-btn ${routeVisible ? 'route-active' : ''}`} onClick={toggleRouteView} aria-pressed={routeVisible} aria-label={routeVisible ? 'Hide route to destination' : 'Show route to destination'} title={routeVisible ? 'Hide route' : 'Show route'}><MapPin size={16}/><span className="preview-map-icon-label">Route</span></button>
+        <button type="button" className={`preview-map-icon-btn user-location-btn ${isTrackingLocation ? 'active' : ''}`} onClick={handleUserLocationPin} aria-pressed={isTrackingLocation} aria-label="Use my location" title="My location"><LocateFixed size={16}/><span className="preview-map-icon-label">My location</span></button>
         <button type="button" className="preview-map-icon-btn preview-map-expand" onClick={() => setMapExpanded(value => !value)} aria-label={mapExpanded ? 'Minimize map' : 'Expand map'} title={mapExpanded ? 'Minimize map' : 'Expand map'}>
-          {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+          {mapExpanded ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}<span className="preview-map-icon-label">{mapExpanded ? 'Close' : 'Expand'}</span>
         </button>
       </div>
       {mapLocationWarning && <div className="map-location-warning" role="alert"><AlertTriangle size={14}/> {mapLocationWarning}</div>}
     </div>
+    {mapExpanded && expandedInfo && <div className="preview-map-expanded-info" aria-label="Reminder details">
+      <p className="preview-map-expanded-title">{expandedInfo.title}</p>
+      <p className="preview-map-expanded-line"><CalendarClock size={14}/> <span>{expandedInfo.due}</span></p>
+      <p className="preview-map-expanded-line"><MapPin size={14}/> <span>{expandedInfo.address}</span></p>
+    </div>}
     {!mapToolsOpen && <div className="preview-map-share-below">
       {mapExpanded && <button type="button" className="preview-map-refresh" onClick={refreshLiveRoute}><RefreshCw size={13}/> Refresh</button>}
       <button type="button" className={`share-location-button ${isTrackingLocation ? 'active' : 'inactive'}`} aria-pressed={isTrackingLocation} onClick={trackGps}><MapPin size={14} fill={isTrackingLocation ? 'currentColor' : 'none'}/> {isTrackingLocation ? 'Stop sharing location' : 'Share my location'}</button>
     </div>}
     {mapExpanded && onSendMapOnly && <div className="preview-map-send-below">
-      <button type="button" className="primary preview-map-send-maponly" onClick={() => onSendMapOnly()}><Send size={15}/> Send to Whom? · Map Only</button>
+      <button type="button" className="primary preview-map-send-maponly" onClick={() => onSendMapOnly()}><Send size={15}/> Send to Whom?</button>
     </div>}
   </div>;
 }
@@ -1707,7 +1752,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {expanded && <div className="preview-summary">
       {!compactMode && <div className="preview-location-timezone-row"><p><MapPin size={15}/> <span>{locationLabel}</span>{canEditMapPin && editMode && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>}
       {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} /></div>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} expandedInfo={recipientMode ? { title: reminder.title || 'Shared reminder', due: dueLabel, address: locationLabel } : null} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
@@ -2468,7 +2513,6 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   return <aside className={`send-panel ${collapsed ? 'collapsed-preview' : ''} ${sheetMinimized ? 'sheet-minimized' : ''}`} style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined} aria-label={collapsed ? 'Collapsed send options panel' : 'Send options panel'}>
     <div className="send-sheet-handle" role="button" tabIndex={0} aria-label={sheetMinimized ? 'Slide up to expand Send Options' : 'Slide down to minimize Send Options'} aria-expanded={!sheetMinimized} onClick={toggleSheet} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); } }} onPointerDown={e => { e.currentTarget.setPointerCapture?.(e.pointerId); handleDragStart(e.clientY); }} onPointerMove={e => handleDragMove(e.clientY)} onPointerUp={handleDragEnd} onPointerCancel={handleDragEnd} onTouchStart={e => handleDragStart(e.touches[0]?.clientY)} onTouchMove={e => handleDragMove(e.touches[0]?.clientY)} onTouchEnd={handleDragEnd}><span className="send-sheet-grabber" /></div>
     <div className="panel-header compact send-options-header"><div><p className="eyebrow tiny">Send options</p><h2>Send reminder</h2></div><div className="send-options-header-actions"><button type="button" className="send-panel-close" aria-label="Close Send Reminder panel" onClick={onClose}><X size={16}/></button></div></div>
-    {mapOnly && <div className="map-only-badge"><MapPin size={13}/> Map Only — sending just the location map</div>}
     <p className="panel-copy">Type a name with a phone number or email address. Matching contacts fill in automatically.</p>
     <Field label={<span className="recipient-label-row"><span>Recipient</span><span className="recipient-show-toggle"><input type="checkbox" checked={showRecipientsInPreview} onChange={e => onShowRecipientsChange?.(e.target.checked)} aria-label="Show recipient in Preview" /> Show</span></span>} error={invalid.length ? 'Fix the red recipient before sending.' : ''} hint={valid ? `${recipients.length} validated recipient${recipients.length === 1 ? '' : 's'}${namedRecipientCount ? ` · ${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} identified` : ''} · ${phones.length ? `${phones.length} text message${phones.length === 1 ? '' : 's'}` : ''}${phones.length && emails.length ? ' · ' : ''}${emails.length ? `${emails.length} email${emails.length === 1 ? '' : 's'}` : ''}` : 'One contact per row. Add another row for multiple contacts.'}>
       <div className="recipient-row-list">

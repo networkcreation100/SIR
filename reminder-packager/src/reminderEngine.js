@@ -173,9 +173,16 @@ export function buildReminderSnapshotSvg(reminder) {
 </svg>`;
 }
 
-export function buildReminderMessageBody(reminder) {
+export function buildReminderMessageBody(reminder, options = {}) {
   const normalized = normalizeReminder(reminder);
   const shareUrl = reminder?.shareUrl || normalized.shareUrl;
+  // Map Only mode: share just the location + interactive map link, no schedule/title/notes.
+  if (options.mapOnly) {
+    return [
+      `Location: ${normalized.location || 'Shared map location'}`,
+      shareUrl ? `Open the interactive map: ${shareUrl}` : 'Open the interactive map link from the sender.'
+    ].filter(Boolean).join('\n');
+  }
   return [
     `Reminder: ${normalized.title}`,
     `Scheduled: ${formatDue(normalized)}`,
@@ -185,14 +192,15 @@ export function buildReminderMessageBody(reminder) {
   ].filter(Boolean).join('\n');
 }
 
-export function createMailto(reminder, recipients = []) {
-  const encoded = encodeURIComponent(buildReminderMessageBody(reminder));
+export function createMailto(reminder, recipients = [], options = {}) {
+  const encoded = encodeURIComponent(buildReminderMessageBody(reminder, options));
   const to = recipients.map(value => value.trim()).filter(Boolean).join(',');
-  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(`Reminder: ${reminder.title}`)}&body=${encoded}`;
+  const subject = options.mapOnly ? 'Shared map location' : `Reminder: ${reminder.title}`;
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encoded}`;
 }
 
-export function createSmsLink(reminder, recipients = []) {
-  const body = encodeURIComponent(buildReminderMessageBody(reminder));
+export function createSmsLink(reminder, recipients = [], options = {}) {
+  const body = encodeURIComponent(buildReminderMessageBody(reminder, options));
   const to = recipients.join(',');
   return `sms:${encodeURIComponent(to)}?body=${body}`;
 }

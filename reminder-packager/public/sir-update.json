@@ -1,16 +1,16 @@
 {
-  "latestVersion": "1.0.15",
+  "latestVersion": "1.0.16",
   "message": "A new SIR update is ready to download.",
   "downloadUrls": {
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "web": "https://networkcreation100.github.io/SIR/"
   },
   "releaseNotes": [
-    "Quieter updates — new versions no longer interrupt you; a red dot appears on the menu button instead",
-    "Open the menu and tap ‘Update available’ to see the update, now shown in a clean centered dialog",
-    "Same reliable reminder sharing, multi-user map cards, and email/SMS delivery you already know"
+    "Tap the pin icon on the map to show or hide the route to your destination — it turns blue when the route is on",
+    "Bigger, cleaner map on the shared card, matching the full-screen preview view",
+    "Tidied up the full-screen map: clearer ‘Send to Whom?’ button and a roomier map area"
   ],
-  "updatedAt": "2026-07-10T20:10:00Z",
+  "updatedAt": "2026-07-11T02:45:00Z",
   "releaseDate": "2026-07-10",
   "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "webUrl": "https://networkcreation100.github.io/SIR/"

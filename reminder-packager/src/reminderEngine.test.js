@@ -38,6 +38,18 @@ describe('reminder engine', () => {
     expect(buildReminderMessageBody(reminder)).toContain('Reminder: Sendable');
   });
 
+  it('builds a Map Only message that omits schedule/title and keeps the map link', () => {
+    const reminder = { ...normalizeReminder({ title: 'Standup', date: '2026-06-24', time: '09:30', location: '123 Main St' }), shareUrl: 'https://example.com/?share=map1' };
+    const body = buildReminderMessageBody(reminder, { mapOnly: true });
+    expect(body).toContain('Location: 123 Main St');
+    expect(body).toContain('Open the interactive map: https://example.com/?share=map1');
+    expect(body).not.toContain('Reminder: Standup');
+    expect(body).not.toContain('Scheduled:');
+    // Links carry the map-only body + subject.
+    expect(decodeURIComponent(createMailto(reminder, ['a@b.com'], { mapOnly: true }))).toContain('Shared map location');
+    expect(decodeURIComponent(createSmsLink(reminder, ['8085551234'], { mapOnly: true }))).toContain('Open the interactive map:');
+  });
+
   it('recognizes a circular gesture path', () => {
     const points = Array.from({ length: 48 }, (_, i) => {
       const a = (Math.PI * 2 * i) / 47;
