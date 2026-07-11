@@ -2473,3 +2473,80 @@ body.sir-send-collapsed{overflow-y:auto;}
 @media(max-width:380px){
   .recipient-shell .preview-map-top-controls .preview-map-expand{right:10px!important}
 }
+
+/* v1.0.18 candidate: embedded shared-file cover must not reserve legacy title space when blank. */
+.screenshot-card-preview.no-title{
+  gap:12px;
+}
+.screenshot-card-preview.no-title .screenshot-eyebrow{
+  margin-bottom:2px;
+}
+
+
+/* v1.0.18 candidate: compact text placeholder auto-sizes with content and supports double-tap editing. */
+.compact-title-voice-holder.preview-title{
+  height:auto!important;
+  min-height:0!important;
+  align-items:center!important;
+  transition:padding .16s ease, min-height .16s ease, box-shadow .16s ease, background-color .16s ease!important;
+  touch-action:manipulation;
+  cursor:text;
+}
+.compact-title-voice-holder.preview-title:not(.editing){
+  padding-top:12px!important;
+  padding-bottom:12px!important;
+}
+.compact-title-voice-holder .voice-box-text{
+  flex:1 1 auto;
+  min-width:0;
+  display:block;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:normal;
+  line-height:1.32!important;
+}
+.compact-title-voice-holder.editing .voice-box-input{
+  min-height:0!important;
+  height:auto!important;
+  overflow:hidden;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  line-height:1.32!important;
+}
+
+
+/* v1.0.18 candidate: double-tap calendar pill opens schedule-only manual inputs. */
+.due.schedule-only-open{
+  box-shadow:0 0 0 4px rgba(37,99,235,.12), 0 10px 22px rgba(37,99,235,.10)!important;
+}
+.preview-edit-schedule.schedule-only{
+  margin:8px 0 10px!important;
+  padding:10px!important;
+  border:1px solid #bfdbfe;
+  border-radius:16px;
+  background:#eff6ff;
+}
+.preview-edit-schedule.schedule-only label span{
+  color:#1d4ed8;
+}
+
+
+/* v1.0.18 candidate: schedule-only editor closes cleanly and keeps date/time fields aligned. */
+.preview-edit-schedule.schedule-only{
+  width:100%!important;
+  box-sizing:border-box!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:8px!important;
+  align-items:end!important;
+}
+.preview-edit-schedule.schedule-only label{
+  min-width:0!important;
+  width:100%!important;
+}
+.preview-edit-schedule.schedule-only input{
+  box-sizing:border-box!important;
+  min-width:0!important;
+  max-width:100%!important;
+  width:100%!important;
+  appearance:auto;
+}

@@ -226,14 +226,14 @@ describe('startNativeSpeech (native mic input capture)', () => {
 
 
 
-  it('Smart Mode keeps native listening open until voice input, then applies the 1-second silence rule', async () => {
+  it('Smart Mode auto-stops after 2 seconds when no voice input is provided', async () => {
     const { startNativeSpeech } = await import('./nativeSpeech.js');
     let err = '';
     let ended = false;
     let finalText = '';
     await startNativeSpeech({
       lang: 'en-US',
-      silenceTimeoutMs: 1000,
+      silenceTimeoutMs: 2000,
       onStart: () => {},
       onPartial: () => {},
       onFinal: (t) => { finalText = t; },
@@ -244,20 +244,26 @@ describe('startNativeSpeech (native mic input capture)', () => {
     await flush(1120);
     expect(ended).toBe(false);
     expect(err).toBe('');
-
-    mockPlugin.__emit('partialResults', { matches: ['meeting with Andy'] });
-    await flush(1120);
+    // Native recognizers report an idle/stopped cycle when no speech is present.
+    // Smart Mode should only close once the recognizer is idle and the no-input window has elapsed.
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(300);
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    await flush(900);
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(40);
     expect(ended).toBe(true);
-    expect(finalText).toBe('meeting with Andy');
+    expect(finalText).toBe('');
+    expect(err).toMatch(/No speech detected/i);
   });
 
-  it('Smart Mode finalizes native speech 1 second after the last voice input', async () => {
+  it('Smart Mode finalizes native speech 2 seconds after the last meaningful voice input', async () => {
     const { startNativeSpeech } = await import('./nativeSpeech.js');
     let finalText = '';
     let ended = false;
     await startNativeSpeech({
       lang: 'en-US',
-      silenceTimeoutMs: 1000,
+      silenceTimeoutMs: 2000,
       onStart: () => {},
       onPartial: () => {},
       onFinal: (t) => { finalText = t; },
@@ -267,8 +273,39 @@ describe('startNativeSpeech (native mic input capture)', () => {
     mockPlugin.__emit('listeningState', { status: 'started' });
     mockPlugin.__emit('partialResults', { matches: ['meet Andy at five'] });
     await flush(1120);
+    expect(ended).toBe(false);
+    await flush(1120);
     expect(ended).toBe(true);
     expect(finalText).toBe('meet Andy at five');
+  });
+
+  it('Smart Mode ignores tiny filler/noise fragments before the 2-second no-input stop', async () => {
+    const { startNativeSpeech } = await import('./nativeSpeech.js');
+    const partials = [];
+    let err = '';
+    let ended = false;
+    await startNativeSpeech({
+      lang: 'en-US',
+      silenceTimeoutMs: 2000,
+      onStart: () => {},
+      onPartial: (t) => partials.push(t),
+      onFinal: () => {},
+      onError: (m) => { err = m; },
+      onEnd: () => { ended = true; },
+    });
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    mockPlugin.__emit('partialResults', { matches: ['um'] });
+    mockPlugin.__emit('partialResults', { matches: ['ah'] });
+    await flush(1120);
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(300);
+    mockPlugin.__emit('listeningState', { status: 'started' });
+    await flush(900);
+    mockPlugin.__emit('listeningState', { status: 'stopped' });
+    await flush(40);
+    expect(partials).toEqual([]);
+    expect(ended).toBe(true);
+    expect(err).toMatch(/No speech detected/i);
   });
 
   it('reports an error when permission is denied', async () => {

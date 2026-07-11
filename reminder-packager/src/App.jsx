@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.17').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.18').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -1676,6 +1676,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
+  const [scheduleOnlyEditOpen, setScheduleOnlyEditOpen] = useState(false);
   // Shared bus so the Zoom-Out and Zoom-In maps stay synchronized while both remain interactive.
   const mapSync = useRef({ maps: {}, applying: false, ZOOM_OFFSET: 4 });
   const drawing = useRef([]);
@@ -1688,6 +1689,80 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
   const typedTitle = String(editText || reminder.title || '').trim();
   const displayTitle = recipientMode ? cleanPreviewCardTitle(typedTitle) : reminder.title;
   const spokenTitle = String(compactVoiceTranscript || '').trim();
+  const compactTitleText = compactVoiceListening
+    ? (compactVoiceTranscript || 'Listening…')
+    : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle
+      ? editText
+      : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim())
+        ? reminder.title
+        : 'Tap the Mic to speak the date, time, and location')));
+  const compactEditRows = Math.min(6, Math.max(1, String(editText || '').split(/\n/).reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / 34)), 0)));
+  const compactTitleTapRef = useRef(0);
+  const scheduleTapRef = useRef(0);
+  const scheduleOnlyCloseTimerRef = useRef(null);
+  function clearScheduleOnlyCloseTimer() {
+    if (scheduleOnlyCloseTimerRef.current) {
+      clearTimeout(scheduleOnlyCloseTimerRef.current);
+      scheduleOnlyCloseTimerRef.current = null;
+    }
+  }
+  function closeScheduleOnlySoon(delay = 280) {
+    clearScheduleOnlyCloseTimer();
+    scheduleOnlyCloseTimerRef.current = setTimeout(() => {
+      scheduleOnlyCloseTimerRef.current = null;
+      setScheduleOnlyEditOpen(false);
+    }, delay);
+  }
+  function requestCompactTextEdit() {
+    if (!compactMode || recipientMode || editMode || compactVoiceListening || !onEdit) return;
+    clearScheduleOnlyCloseTimer();
+    setScheduleOnlyEditOpen(false);
+    onEdit();
+  }
+  function handleCompactTitleTouchEnd(event) {
+    if (!compactMode || recipientMode || editMode || compactVoiceListening) return;
+    const now = Date.now();
+    if (now - compactTitleTapRef.current < 320) {
+      event.preventDefault();
+      requestCompactTextEdit();
+    }
+    compactTitleTapRef.current = now;
+  }
+  function openScheduleOnlyEdit() {
+    if (!compactMode || editMode || !onEdit) return;
+    clearScheduleOnlyCloseTimer();
+    setScheduleOnlyEditOpen(false);
+    onEdit();
+  }
+  function handleScheduleTouchEnd(event) {
+    if (!compactMode || editMode || !onEdit) return;
+    const now = Date.now();
+    if (now - scheduleTapRef.current < 320) {
+      event.preventDefault();
+      openScheduleOnlyEdit();
+    }
+    scheduleTapRef.current = now;
+  }
+  function handleScheduleOnlyBlur(event) {
+    if (!scheduleOnlyEditOpen || editMode) return;
+    const nextFocus = event.relatedTarget;
+    if (nextFocus && event.currentTarget.contains(nextFocus)) return;
+    closeScheduleOnlySoon(180);
+  }
+  function handleScheduleDateChange(event) {
+    onEditDate?.(event.target.value);
+  }
+  function handleScheduleTimeChange(event) {
+    onEditTime?.(event.target.value);
+    if (scheduleOnlyEditOpen && !editMode) closeScheduleOnlySoon(520);
+  }
+  useEffect(() => {
+    if (editMode) {
+      clearScheduleOnlyCloseTimer();
+      setScheduleOnlyEditOpen(false);
+    }
+  }, [editMode]);
+  useEffect(() => () => clearScheduleOnlyCloseTimer(), []);
   const cardHasUserInput = Boolean(
     spokenTitle ||
     (typedTitle && typedTitle !== placeholderReminderTitle && typedTitle !== 'Untitled Reminder') ||
@@ -1734,14 +1809,14 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {compactMode && onCompactVoice && <button type="button" className={`mic-button preview-card-centered-mic ${compactVoiceListening ? 'listening' : ''}`} style={compactVoiceListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={onCompactVoice} aria-label="Speak to fill reminder"><Mic size={18}/></button>}
     {ring && <div className="magic-ring"><Sparkles size={22}/><span>Ready to send</span></div>}
     {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
-    {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite">
+    {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite" title={!editMode ? 'Double-tap to edit reminder text' : undefined} onDoubleClick={requestCompactTextEdit} onTouchEnd={handleCompactTitleTouchEnd}>
       {!editMode && <span className="voice-star-wrap"><Sparkles size={15}/></span>}
-      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactVoiceListening ? (compactVoiceTranscript || 'Listening…') : (compactVoiceTranscript || (editText && editText.trim() && editText.trim() !== placeholderReminderTitle ? editText : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim()) ? reminder.title : 'Tap the Mic to speak the date, time, and location')))}</span>}
+      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={compactEditRows} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactTitleText}</span>}
     </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className={`preview-title ${recipientMode && !displayTitle ? 'empty-title' : ''}`}>{displayTitle}</h3>}
-    <div className={`due ${status.tone} ${scheduleIsDefault ? 'schedule-default' : ''} ${scheduleTouched ? 'schedule-active' : ''}`}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
-    {editMode && <div className="preview-edit-schedule">
-      <label><span>Date</span><input type="date" value={editDate} onChange={event => onEditDate?.(event.target.value)} aria-label="Edit reminder date" /></label>
-      <label><span>Time</span><input type="time" value={editTime} onChange={event => onEditTime?.(event.target.value)} aria-label="Edit reminder time" /></label>
+    <div className={`due ${status.tone} ${scheduleIsDefault ? 'schedule-default' : ''} ${scheduleTouched ? 'schedule-active' : ''} ${scheduleOnlyEditOpen ? 'schedule-only-open' : ''}`} title={compactMode && !editMode ? 'Double-tap to edit date and time' : undefined} onDoubleClick={openScheduleOnlyEdit} onTouchEnd={handleScheduleTouchEnd}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
+    {(editMode || scheduleOnlyEditOpen) && <div className={`preview-edit-schedule ${scheduleOnlyEditOpen && !editMode ? 'schedule-only' : ''}`} onFocus={clearScheduleOnlyCloseTimer} onBlur={handleScheduleOnlyBlur}>
+      <label><span>Date</span><input type="date" value={editDate} onChange={handleScheduleDateChange} aria-label="Edit reminder date" autoFocus={scheduleOnlyEditOpen && !editMode} /></label>
+      <label><span>Time</span><input type="time" value={editTime} onChange={handleScheduleTimeChange} aria-label="Edit reminder time" /></label>
     </div>}
     {editMode && onEditLocation && <div className="recipient-inline-location-edit preview-inline-location-edit">
       <label><span>Address</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder address" placeholder="Type address, venue, landmark, or paste link" /></label>
@@ -1830,9 +1905,39 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-const SMART_MIC_AUTO_STOP_MS = 1000;
+const SMART_MIC_AUTO_STOP_MS = 2000;
 const WEB_SPEECH_AUTO_STOP_MS = SMART_MIC_AUTO_STOP_MS;
-const WEB_SPEECH_FINAL_STOP_MS = 260;
+const WEB_SPEECH_FINAL_STOP_MS = SMART_MIC_AUTO_STOP_MS;
+const SPEECH_FILLER_WORDS = new Set(['um', 'uh', 'umm', 'uhh', 'hmm', 'mmm', 'ah', 'er', 'uhm']);
+
+function cleanSpeechTranscript(text = '') {
+  return String(text || '')
+    .replace(/[​-‍﻿]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isLikelySpeechTranscript(text = '', confidence = 0) {
+  const cleaned = cleanSpeechTranscript(text);
+  if (!cleaned) return false;
+  const bare = cleaned.toLowerCase().replace(/[^a-z0-9:\/-\s]/g, '').trim();
+  if (!bare) return false;
+  const words = bare.split(/\s+/).filter(Boolean);
+  const alphaNumeric = bare.replace(/[^a-z0-9]/g, '');
+  if (!alphaNumeric) return false;
+  if (SPEECH_FILLER_WORDS.has(bare)) return false;
+  if (confidence > 0 && confidence < 0.25 && words.length < 3 && !/\d/.test(bare)) return false;
+  if (alphaNumeric.length < 3 && !/\d/.test(alphaNumeric)) return false;
+  if (words.length === 1 && alphaNumeric.length < 4 && !/\d/.test(alphaNumeric)) return false;
+  return true;
+}
+
+function speechResultsToTranscript(results, finalOnly = false) {
+  const entries = Array.from(results || []).filter(result => !finalOnly || result.isFinal);
+  const transcript = cleanSpeechTranscript(entries.map(result => result[0]?.transcript || '').join(' '));
+  const confidence = entries.reduce((max, result) => Math.max(max, Number(result[0]?.confidence || 0)), 0);
+  return { transcript, confidence };
+}
 
 function clearWebSpeechAutoStop(timerRef) {
   if (!timerRef || !timerRef.current) return;
@@ -1852,6 +1957,14 @@ function scheduleWebSpeechAutoStop(recognitionRef, timerRef, delay = WEB_SPEECH_
       try { recognition.abort?.(); } catch {}
     }
   }, delay);
+}
+
+function attachSmartSpeechActivityEvents(recognition, recognitionRef, timerRef) {
+  if (!recognition) return;
+  // While the recognizer reports active speech, do not let the silence timer stop the mic.
+  // The 2-second countdown starts only after speech ends or after the latest meaningful transcript.
+  recognition.onspeechstart = () => clearWebSpeechAutoStop(timerRef);
+  recognition.onspeechend = () => scheduleWebSpeechAutoStop(recognitionRef, timerRef);
 }
 
 function addDays(date, days) {
@@ -2285,9 +2398,9 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     setRecipientNotice('Starting Smart Mode microphone… speak after the listening cue.');
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); },
-      onPartial: (t) => { if (t) { setRecipientVoiceText(t); setRecipientNotice(`Heard: \u201c${t}\u201d`); } },
-      onFinal: (t) => { if (t) applyRecipientVoiceTranscript(t); },
+      onStart: () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 2 seconds after you pause.'); },
+      onPartial: (t) => { const clean = cleanSpeechTranscript(t); if (isLikelySpeechTranscript(clean)) { setRecipientVoiceText(clean); setRecipientNotice(`Heard: \u201c${clean}\u201d`); } },
+      onFinal: (t) => { const clean = cleanSpeechTranscript(t); if (isLikelySpeechTranscript(clean)) applyRecipientVoiceTranscript(clean); },
       onError: (m) => setRecipientNotice(m),
       onEnd: () => { recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); },
       silenceTimeoutMs: SMART_MIC_AUTO_STOP_MS,
@@ -2303,21 +2416,21 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
-    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); };
+    attachSmartSpeechActivityEvents(recognition, recipientRecognitionRef, recipientSilenceTimerRef);
+    recognition.onstart = () => { setRecipientListening(true); setRecipientVoiceText(''); setRecipientNotice('Smart Mode ready — speak when ready. I’ll stop 2 seconds after you pause.'); scheduleWebSpeechAutoStop(recipientRecognitionRef, recipientSilenceTimerRef); };
     recognition.onerror = event => { clearWebSpeechAutoStop(recipientSilenceTimerRef); window.setTimeout(() => setRecipientListening(false), 500); setRecipientNotice(`Contact voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
     recognition.onend = () => { clearWebSpeechAutoStop(recipientSilenceTimerRef); recipientRecognitionRef.current = null; window.setTimeout(() => setRecipientListening(false), 300); };
     recognition.onresult = event => {
-      const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
-      if (transcript) {
+      const { transcript, confidence } = speechResultsToTranscript(event.results);
+      const { transcript: finalTranscript, confidence: finalConfidence } = speechResultsToTranscript(event.results, true);
+      if (isLikelySpeechTranscript(transcript, confidence)) {
         setRecipientVoiceText(transcript);
         setRecipientNotice(`Heard: “${transcript}”`);
+        scheduleWebSpeechAutoStop(recipientRecognitionRef, recipientSilenceTimerRef);
       }
-      const finalTranscript = Array.from(event.results || []).filter(result => result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
-      if (finalTranscript) {
+      if (isLikelySpeechTranscript(finalTranscript, finalConfidence)) {
         applyRecipientVoiceTranscript(finalTranscript);
         scheduleWebSpeechAutoStop(recipientRecognitionRef, recipientSilenceTimerRef, WEB_SPEECH_FINAL_STOP_MS);
-      } else if (transcript) {
-        scheduleWebSpeechAutoStop(recipientRecognitionRef, recipientSilenceTimerRef);
       }
     };
     recipientRecognitionRef.current = recognition;
@@ -2683,7 +2796,8 @@ function App() {
   }), [form]);
   const formValid = Object.values(validation).every(error => !error);
   const isSharedRecipient = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('share');
-  const compactMode = displayMode !== 'standard';
+  // Standard mode is retired; keep the app locked to compact mode so the legacy standard card cannot render.
+  const compactMode = true;
 
 
   // Single-card mode: persist only the current card so no hidden stack accumulates in storage.
@@ -3124,9 +3238,9 @@ function App() {
     // Native app path (Capacitor Android/iOS) — Web Speech API is absent there.
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); },
-      onPartial: (t) => { if (t) setVoiceTranscript(t); },
-      onFinal: (t) => { if (t) applyVoiceTranscript(t); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 2 seconds after you pause.'); },
+      onPartial: (t) => { const clean = cleanSpeechTranscript(t); if (isLikelySpeechTranscript(clean)) setVoiceTranscript(clean); },
+      onFinal: (t) => { const clean = cleanSpeechTranscript(t); if (isLikelySpeechTranscript(clean)) applyVoiceTranscript(clean); },
       onError: (m) => setVoiceStatus(m),
       onEnd: () => { recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); },
       silenceTimeoutMs: SMART_MIC_AUTO_STOP_MS,
@@ -3145,20 +3259,20 @@ function App() {
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
-    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 1 second after you pause.'); };
+    attachSmartSpeechActivityEvents(recognition, recognitionRef, speechSilenceTimerRef);
+    recognition.onstart = () => { pauseBackgroundMusicForMicrophone(); setListening(true); setVoiceTranscript(''); setVoiceStatus('Smart Mode ready — speak when ready. I’ll stop 2 seconds after you pause.'); scheduleWebSpeechAutoStop(recognitionRef, speechSilenceTimerRef); };
     recognition.onerror = event => { clearWebSpeechAutoStop(speechSilenceTimerRef); window.setTimeout(() => setListening(false), 1000); setVoiceStatus(`Voice capture stopped: ${event.error || 'microphone unavailable'}.`); };
     recognition.onend = () => { clearWebSpeechAutoStop(speechSilenceTimerRef); recognitionRef.current = null; micStartPendingRef.current.main = false; window.setTimeout(() => setListening(false), 300); };
     recognition.onresult = event => {
-      const transcript = Array.from(event.results || []).map(result => result[0]?.transcript || '').join(' ').trim();
-      if (transcript) setVoiceTranscript(transcript);
-      const finalTranscript = Array.from(event.results || []).filter(result => result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
-      if (finalTranscript) {
+      const { transcript, confidence } = speechResultsToTranscript(event.results);
+      const { transcript: finalTranscript, confidence: finalConfidence } = speechResultsToTranscript(event.results, true);
+      if (isLikelySpeechTranscript(transcript, confidence)) {
+        setVoiceTranscript(transcript);
+        scheduleWebSpeechAutoStop(recognitionRef, speechSilenceTimerRef);
+      }
+      if (isLikelySpeechTranscript(finalTranscript, finalConfidence)) {
         applyVoiceTranscript(finalTranscript);
         scheduleWebSpeechAutoStop(recognitionRef, speechSilenceTimerRef, WEB_SPEECH_FINAL_STOP_MS);
-      } else if (transcript) {
-        scheduleWebSpeechAutoStop(recognitionRef, speechSilenceTimerRef);
-      } else {
-        setVoiceStatus('No speech detected. Tap the microphone and try again.');
       }
     };
     recognitionRef.current = recognition;
@@ -3182,7 +3296,7 @@ function App() {
     fieldRefs.current[3]?.focus();
     const nativeCtrl = await startNativeSpeech({
       lang: navigator.language || 'en-US',
-      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 1 second after you pause.'); fieldRefs.current[3]?.focus(); },
+      onStart: () => { pauseBackgroundMusicForMicrophone(); setAddressMicVisible(true); setLocationListening(true); setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 2 seconds after you pause.'); fieldRefs.current[3]?.focus(); },
       onPartial: (t) => { if (t) setForm(prev => ({ ...prev, location: t, locationPin: null })); },
       onFinal: (t) => { if (t) { setForm(prev => ({ ...prev, location: t, locationPin: null })); setLocationStatus('Address captured from voice.'); } },
       onError: (m) => setLocationStatus(m),
@@ -3204,11 +3318,12 @@ function App() {
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
+    attachSmartSpeechActivityEvents(recognition, locationRecognitionRef, locationSilenceTimerRef);
     recognition.onstart = () => {
       pauseBackgroundMusicForMicrophone();
       setAddressMicVisible(true);
       setLocationListening(true);
-      setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 1 second after you pause.');
+      setLocationStatus('Smart Mode ready — say the address when ready. I’ll stop 2 seconds after you pause.');
       fieldRefs.current[3]?.focus();
     };
     recognition.onerror = event => {
@@ -3456,12 +3571,13 @@ function App() {
     if (!sharedPackage && sharedStatus) {
       return <main className="recipient-shell"><section className="recipient-loading error"><AlertTriangle size={18}/> {sharedStatus}</section></main>;
     }
+    const sharedCoverTitle = cleanPreviewCardTitle(activeReminder.title);
     return <main className={`recipient-shell shared-object-only ${recipientEditOpen ? 'recipient-editing-active' : ''}`}>
       {!sharedCoverDismissed && <button type="button" className={`shared-screenshot-cover ${sharedCoverFading ? 'fade-out' : ''}`} onClick={openSharedReminderFromScreenshot} aria-label="Open shared reminder file">
         <span className="screenshot-device-bar"><span></span><span></span><span></span></span>
-        <span className="screenshot-card-preview" data-share-token={sharedPackage.token}>
+        <span className={`screenshot-card-preview ${sharedCoverTitle ? '' : 'no-title'}`} data-share-token={sharedPackage.token}>
           <span className="screenshot-eyebrow">Shared reminder preview</span>
-          <strong>{activeReminder.title || placeholderReminderTitle}</strong>
+          {sharedCoverTitle && <strong>{sharedCoverTitle}</strong>}
           <span><CalendarClock size={14}/> {formatDue(activeReminder)}</span>
           <span><MapPin size={14}/> {activeReminder.location || 'No location set'}</span>
           {activeReminder.notes && <em>{activeReminder.notes}</em>}

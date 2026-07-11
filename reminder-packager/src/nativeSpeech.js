@@ -59,7 +59,7 @@ export function isNativePlatform() {
 //   onEnd()              -> called when the WHOLE session ends (after the user stops)
 // Returns a controller with .stop()/.abort(). If native is unavailable it
 // returns null so the caller can fall back to the Web Speech API.
-export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onError, onEnd, silenceTimeoutMs = 1000 }) {
+export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onError, onEnd, silenceTimeoutMs = 2000 }) {
   const ok = await loadNative();
   if (!ok) return null;
 
@@ -101,7 +101,28 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     const MAX_SILENCE_RESTARTS = 60; // safety cap (user normally stops manually)
     let restarts = 0;
     let heardVoiceInput = false;
-    const smartStopMs = Math.max(250, Number(silenceTimeoutMs) || 1000);
+    const sessionStartedAt = Date.now();
+    const smartStopMs = Math.max(1000, Number(silenceTimeoutMs) || 2000);
+
+
+    const cleanSpeechTranscript = (text = '') => String(text || '')
+      .replace(/[​-‍﻿]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const isLikelySpeechTranscript = (text = '') => {
+      const cleaned = cleanSpeechTranscript(text);
+      if (!cleaned) return false;
+      const bare = cleaned.toLowerCase().replace(/[^a-z0-9:\/-\s]/g, '').trim();
+      if (!bare) return false;
+      if (['um', 'uh', 'umm', 'uhh', 'hmm', 'mmm', 'ah', 'er', 'uhm'].includes(bare)) return false;
+      const alphaNumeric = bare.replace(/[^a-z0-9]/g, '');
+      if (!alphaNumeric) return false;
+      if (alphaNumeric.length < 3 && !/\d/.test(alphaNumeric)) return false;
+      const words = bare.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && alphaNumeric.length < 4 && !/\d/.test(alphaNumeric)) return false;
+      return true;
+    };
 
     const normalizeWords = (text) => String(text || '')
       .toLowerCase()
@@ -201,10 +222,9 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     };
 
     const scheduleSmartSilenceStop = () => {
-      // VAD-style behavior: only arm the 1-second silence timeout after speech
-      // recognizer events have produced real text. Opening the mic alone must not
-      // start a raw timer, or mobile users get cut off before they can speak.
-      if (stopped || ended || !heardVoiceInput) return;
+      // VAD-style behavior: auto-stop after 2 seconds of initial silence or post-speech pause.
+      // Only meaningful transcripts reset this timer; short/filler fragments are treated as background noise.
+      if (stopped || ended) return;
       clearSmartSilenceTimer();
       smartSilenceTimer = setTimeout(() => {
         smartSilenceTimer = null;
@@ -213,7 +233,7 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
         if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
         clearSmartSilenceTimer();
         try { Plugin.stop(); } catch { /* ignore */ }
-        finishSession('');
+        finishSession(heardVoiceInput ? '' : 'No speech detected. Tap the microphone and try again.');
       }, smartStopMs);
     };
 
@@ -246,8 +266,8 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
     // Live partial results (Android). iOS returns everything via the start() promise.
     try {
       partialListener = await Plugin.addListener('partialResults', (data) => {
-        const text = (data && data.matches && data.matches[0]) ? String(data.matches[0]).trim() : '';
-        if (text) {
+        const text = cleanSpeechTranscript((data && data.matches && data.matches[0]) ? String(data.matches[0]) : '');
+        if (isLikelySpeechTranscript(text)) {
           heardVoiceInput = true;
           liveChunk = text;
           emitPartial();
@@ -269,6 +289,13 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
         } else if (status === 'stopped') {
           hasStateEvents = true;
           cycleActive = false;
+          // If no meaningful transcript arrived and the recognizer has gone idle for the no-input window,
+          // stop. This avoids cutting off active speech while still closing a truly silent mic.
+          if (!heardVoiceInput && Date.now() - sessionStartedAt >= smartStopMs) {
+            stopped = true;
+            finishSession('No speech detected. Tap the microphone and try again.');
+            return;
+          }
           // End of an utterance cycle. Commit what we heard and keep going.
           commitLiveChunk();
           emitPartial();
@@ -289,8 +316,8 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
         // With partialResults, this may resolve immediately (empty) OR, on some
         // platforms/iOS, carry the final matches. Capture matches if present.
         const matches = (result && result.matches) || [];
-        const finalText = matches.length ? String(matches[0]).trim() : '';
-        if (finalText) {
+        const finalText = cleanSpeechTranscript(matches.length ? String(matches[0]) : '');
+        if (isLikelySpeechTranscript(finalText)) {
           heardVoiceInput = true;
           liveChunk = finalText;
           emitPartial();
@@ -303,6 +330,11 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
           commitLiveChunk();
           emitPartial();
           if (!stopped && !ended) {
+            if (!heardVoiceInput && Date.now() - sessionStartedAt >= smartStopMs) {
+              stopped = true;
+              finishSession('No speech detected. Tap the microphone and try again.');
+              return;
+            }
             if (restartTimer) clearTimeout(restartTimer);
             restartTimer = setTimeout(() => { if (!stopped && !ended) runCycle(); }, 700);
           }
@@ -325,6 +357,11 @@ export async function startNativeSpeech({ lang, onStart, onPartial, onFinal, onE
         // through listeningState.
         cycleActive = false;
         if (!hasStateEvents) {
+          if (!heardVoiceInput && Date.now() - sessionStartedAt >= smartStopMs) {
+            stopped = true;
+            finishSession('No speech detected. Tap the microphone and try again.');
+            return;
+          }
           commitLiveChunk();
           scheduleRestart();
         }

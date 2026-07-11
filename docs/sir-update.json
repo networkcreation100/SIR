@@ -1,17 +1,15 @@
 {
-  "latestVersion": "1.0.17",
-  "message": "A new SIR update is ready to download.",
-  "downloadUrls": {
-    "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
-    "web": "https://networkcreation100.github.io/SIR/"
-  },
+  "latestVersion": "1.0.18",
+  "minimumVersion": "1.0.0",
+  "releasedAt": "2026-07-10T22:20:00-10:00",
+  "message": "Version 1.0.18 improves Smart Mic listening, compact card editing, and shared preview cleanup.",
   "releaseNotes": [
-    "Shared-card text now matches the preview card: blank preview text stays blank, and real text is centered",
-    "Shared map controls are cleaner: hover labels, no overlapping icons, and the max/min button sits in the upper-right corner",
-    "Maximum shared-map view now hides the bottom address strip and expands the map behind the action buttons"
+    "Smart Mic now stays active while speech is detected and stops only after 2 seconds of no additional speech or input.",
+    "Background noise and filler fragments are filtered so they do not overwrite reminder text or keep the mic alive.",
+    "The compact card text placeholder now expands and contracts with typed content, with double-tap manual text editing.",
+    "Double-tapping the calendar opens the full Edit schedule & location panel for manual date, time, address, and location edits.",
+    "Embedded shared-file previews now hide legacy placeholder titles when the sender leaves the title blank."
   ],
-  "updatedAt": "2026-07-11T04:34:00Z",
-  "releaseDate": "2026-07-10",
-  "androidUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
-  "webUrl": "https://networkcreation100.github.io/SIR/"
+  "downloadUrl": "https://github.com/networkcreation100/SIR/releases/latest",
+  "androidPackage": "com.sir07042026"
 }
