@@ -2550,3 +2550,244 @@ body.sir-send-collapsed{overflow-y:auto;}
   width:100%!important;
   appearance:auto;
 }
+
+/* ============================================================
+   v1.0.19 — Floating "Done editing" button.
+   While in edit mode, the Done editing button pops up and pins
+   to the lower section of the viewport so it is always reachable.
+   It is only rendered with this class while editMode is true, so
+   tapping it (which ends edit mode) removes it automatically.
+   ============================================================ */
+@keyframes doneEditingPopIn{
+  0%{ transform:translateX(-50%) translateY(24px); opacity:0 }
+  60%{ transform:translateX(-50%) translateY(-2px); opacity:1 }
+  100%{ transform:translateX(-50%) translateY(0); opacity:1 }
+}
+@keyframes doneEditingFloatBlink{
+  0%,100%{ box-shadow:0 12px 30px rgba(22,163,74,.42), 0 0 0 4px rgba(22,163,74,.18); opacity:1 }
+  50%{ box-shadow:0 12px 30px rgba(22,163,74,.22), 0 0 0 4px rgba(22,163,74,.05); opacity:.7 }
+}
+.preview-edit-done.preview-edit-done-floating{
+  position:fixed;
+  left:50%;
+  bottom:calc(22px + env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  z-index:10050;
+  width:min(420px, calc(100vw - 40px));
+  margin:0;
+  padding:16px 20px;
+  border-radius:999px;
+  background:#16a34a;
+  border:1px solid #16a34a;
+  color:#fff;
+  font-size:16px;
+  font-weight:900;
+  letter-spacing:.2px;
+  text-align:center;
+  cursor:pointer;
+  animation:doneEditingPopIn .28s cubic-bezier(.2,.9,.3,1.2) both, doneEditingFloatBlink 1.05s ease-in-out .28s infinite;
+}
+.preview-edit-done.preview-edit-done-floating:hover{ background:#15803d; border-color:#15803d; }
+.preview-edit-done.preview-edit-done-floating:active{ transform:translateX(-50%) translateY(1px); }
+/* Recipient/shared footer variant keeps the same floating treatment */
+.recipient-shell .preview-recipient-note button.shared-footer-edit-button.preview-edit-done.preview-edit-done-floating{
+  position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom));
+  transform:translateX(-50%); width:min(420px, calc(100vw - 40px));
+}
+
+/* ============================================================
+   v1.0.19 — Max map view is ALWAYS true full screen.
+   Removes the old half-screen / floating-card expanded layout
+   entirely for BOTH the sender preview card and the shared
+   recipient card. The map fills the whole viewport edge-to-edge
+   and the action button(s) float overlaid on the bottom edge.
+   This block is last so it wins over all earlier .expanded rules.
+   ============================================================ */
+.preview-live-map.expanded{
+  position:fixed!important;
+  inset:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  z-index:9999;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:#e8eef3;
+  box-shadow:none!important;
+}
+/* Map shell + canvas fill the entire screen — no reserved white space. */
+.preview-live-map.expanded .preview-map-shell{
+  flex:1 1 auto!important;
+  height:100%!important;
+  min-height:100%!important;
+  margin:0!important;
+}
+.preview-live-map.expanded .preview-map-canvas,
+.preview-live-map.expanded .leaflet-container{
+  height:100%!important;
+  min-height:100%!important;
+}
+/* No bottom info/address strip taking layout height in max view. */
+.preview-live-map.expanded .preview-map-expanded-info{ display:none!important; }
+/* Action bar(s) float over the bottom edge of the full-screen map. */
+.preview-live-map.expanded .preview-map-share-below,
+.preview-live-map.expanded .preview-map-send-below{
+  position:absolute!important;
+  left:0; right:0; bottom:0;
+  z-index:650;
+  margin:0!important;
+  padding:12px 16px calc(20px + env(safe-area-inset-bottom,0px))!important;
+  display:flex; justify-content:center; flex-wrap:wrap; gap:10px;
+  background:linear-gradient(to top,rgba(255,255,255,.96) 0%,rgba(255,255,255,.72) 58%,transparent 100%)!important;
+  pointer-events:none;
+}
+.preview-live-map.expanded .preview-map-share-below > *,
+.preview-live-map.expanded .preview-map-send-below > *{ pointer-events:auto; }
+/* Keep the Send-to-Whom / Share buttons a comfortable pill width. */
+.preview-live-map.expanded .preview-map-send-maponly,
+.preview-live-map.expanded .preview-map-share-below .share-location-button{
+  width:min(100%,420px);
+}
+/* Top controls stay pinned to the very top of the screen with safe-area padding. */
+.preview-live-map.expanded .preview-map-top-controls{
+  top:calc(14px + env(safe-area-inset-top,0px))!important;
+}
+
+/* ============================================================
+   v1.0.19 — Preview card Edit-mode "Note to recipient:" text box.
+   Placeholder = faded gray guidance (not sent). User-typed text =
+   green, bold, centered, matching the on-screen style. Text wraps
+   fully so nothing is cut off.
+   ============================================================ */
+.compact-title-voice-holder.editing .voice-box-input{
+  text-align:center;
+  color:#15803d!important;      /* user-entered text is green */
+  font-weight:800;
+  font-size:16px;               /* match .due pill size */
+  line-height:1.35;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  overflow:visible;
+  height:auto;
+}
+.compact-title-voice-holder.editing .voice-box-input::placeholder{
+  color:#9ca3af!important;      /* faded gray guidance */
+  opacity:1;
+  font-weight:800;
+  font-size:16px;               /* match .due pill size */
+  text-align:center;
+}
+
+/* ============================================================
+   v1.0.19 — Preview card note text keeps the SAME style after
+   exiting edit mode (green, bold, centered — matching edit view).
+   Plus "Send to whom?" CTA blinks after the user taps Done editing.
+   ============================================================ */
+/* Display text (not editing) mirrors the edit-mode note style. */
+/* Shared layout for both states — match the Date/Time pill font. */
+.compact-title-voice-holder .voice-box-text{
+  font-weight:800!important;      /* match .due pill weight */
+  font-size:16px!important;       /* match .due pill size */
+  line-height:1.35;
+  letter-spacing:normal;
+  text-align:center;
+  width:100%;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+/* Real user-entered text = green (matches edit view). */
+.compact-title-voice-holder .voice-box-text.has-note-text{
+  color:#15803d!important;
+}
+/* Default guidance text = faded gray. */
+.compact-title-voice-holder .voice-box-text.is-default-note{
+  color:#9ca3af!important;
+}
+/* Send-to-whom CTA blink after Done editing. */
+.compact-preview-send-cta.send-cta-blinking{
+  animation:sendCtaBlink 1s ease-in-out infinite;
+}
+@keyframes sendCtaBlink{
+  0%,100%{ box-shadow:0 10px 22px rgba(249,115,22,.28); opacity:1; transform:translateY(0); }
+  50%{ box-shadow:0 0 0 4px rgba(249,115,22,.45),0 14px 30px rgba(249,115,22,.5); opacity:.72; transform:translateY(-1px); }
+}
+
+/* ============================================================
+   v1.0.19 — Center the Date/Time pill content horizontally.
+   The compact due pill previously left-aligned via
+   justify-content:space-between. When there is no urgency label
+   the date/time should sit centered in the pill.
+   ============================================================ */
+.compact-display-mode .due,
+.simplified-preview .due{
+  justify-content:center!important;
+}
+.compact-display-mode .due .due-left,
+.simplified-preview .due .due-left{
+  justify-content:center;
+}
+/* If an urgency label is present, revert to space-between so the
+   badge sits on the right and the date on the left. */
+.compact-display-mode .due:has(.preview-importance),
+.simplified-preview .due:has(.preview-importance){
+  justify-content:space-between!important;
+}
+
+/* ============================================================
+   v1.0.19 — Max map view is ALWAYS true full screen.
+   Wins over ALL earlier .expanded rules (inset:14px/6px, the
+   calc(100vh - Npx) shell heights, floating-card radius).
+   Applies to BOTH the sender preview card and the shared
+   recipient card. Kills the white gap under the map.
+   ============================================================ */
+.preview-live-map.expanded{
+  position:fixed!important;
+  inset:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  z-index:9999!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+  background:#fff!important;
+  box-shadow:none!important;
+}
+.preview-live-map.expanded .preview-map-shell{
+  flex:1 1 auto!important;
+  height:100%!important;
+  min-height:100%!important;
+  max-height:none!important;
+}
+.preview-live-map.expanded .preview-map-canvas,
+.preview-live-map.expanded .leaflet-container{
+  height:100%!important;
+  min-height:100%!important;
+}
+/* Hide the bottom info strip in full-screen — map fills the space. */
+.preview-live-map.expanded .preview-map-expanded-info{ display:none!important; }
+/* Top controls clear the notch/status bar. */
+.preview-live-map.expanded .preview-map-top-controls{
+  padding-top:calc(10px + env(safe-area-inset-top))!important;
+}
+/* Send-to-Whom + share buttons overlay the bottom of the map
+   instead of consuming layout height (no white gap). */
+.preview-live-map.expanded .preview-map-send-below,
+.preview-live-map.expanded .preview-map-share-below{
+  position:absolute!important;
+  left:0; right:0;
+  bottom:0;
+  margin:0!important;
+  padding:14px 16px calc(16px + env(safe-area-inset-bottom))!important;
+  background:linear-gradient(to top, rgba(255,255,255,.96) 62%, rgba(255,255,255,0))!important;
+  z-index:600;
+  pointer-events:none;
+}
+.preview-live-map.expanded .preview-map-send-below > *,
+.preview-live-map.expanded .preview-map-share-below > *{
+  pointer-events:auto;
+}
+.preview-live-map.expanded .preview-map-send-maponly{ width:100%; }

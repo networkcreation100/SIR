@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.18').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.19').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -1672,7 +1672,7 @@ function InteractiveLine({ label, value, onRemove }) {
   </div>;
 }
 
-function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText, sendPanelOpen = false, onSendMapOnly }) {
+function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = false, compactMode = false, forceMap = false, onCompactVoice, compactVoiceListening = false, compactVoiceTranscript = '', onPinLocation, onLocationShared, sharedSummary = '', sharedMeta = null, cardIndex = 0, cardTotal = 1, onPrevCard, onNextCard, previewRecipients = [], showRecipients = false, onToggleRecipients, previewTimezone = 'HST', onPreviewTimezoneChange, editMode = false, editDate = '', editTime = '', onEditDate, onEditTime, editLocation = '', onEditLocation, locationToolsOpen = false, onToggleLocationTools, onUseMyLocation, onClearLocation, locationStatus = '', editText = '', onEditText, sendPanelOpen = false, onSendMapOnly, blinkSendCta = false }) {
   const [expanded, setExpanded] = useState(true);
   const [ring, setRing] = useState(false);
   const [previewPinPickerOpen, setPreviewPinPickerOpen] = useState(false);
@@ -1695,7 +1695,9 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
       ? editText
       : (reminder.title && reminder.title.trim && reminder.title.trim() && !['Untitled Reminder', placeholderReminderTitle].includes(reminder.title.trim())
         ? reminder.title
-        : 'Tap the Mic to speak the date, time, and location')));
+        : 'Double-tap to start typing or set the date and time')));
+  const compactDefaultPrompt = 'Double-tap to start typing or set the date and time';
+  const hasRealNoteText = compactTitleText !== compactDefaultPrompt && compactTitleText !== 'Listening…';
   const compactEditRows = Math.min(6, Math.max(1, String(editText || '').split(/\n/).reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / 34)), 0)));
   const compactTitleTapRef = useRef(0);
   const scheduleTapRef = useRef(0);
@@ -1806,12 +1808,10 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
       {!recipientMode && onDelete && <button type="button" className="ghost preview-delete-card" aria-label="Delete preview reminder" title="Delete preview reminder" onClick={onDelete}><X size={17}/></button>}
       <button className={`ghost top-action icon-only ${expanded ? 'expanded' : 'collapsed'}`} aria-label={expanded ? 'Minimize preview' : 'Expand preview'} title={expanded ? 'Minimize preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}><ChevronDown size={18}/></button>
     </div>
-    {compactMode && onCompactVoice && <button type="button" className={`mic-button preview-card-centered-mic ${compactVoiceListening ? 'listening' : ''}`} style={compactVoiceListening ? { '--mic-bg': '#dcfce7', '--mic-fg': '#16a34a' } : undefined} onClick={onCompactVoice} aria-label="Speak to fill reminder"><Mic size={18}/></button>}
     {ring && <div className="magic-ring"><Sparkles size={22}/><span>Ready to send</span></div>}
     {!recipientMode && !compactMode && <div className="preview-heading-row"><h2 className="preview-heading">Preview reminder</h2></div>}
     {compactMode ? <div className={`preview-title compact-title-voice-holder voice-capture-box ${compactVoiceListening ? 'listening' : ''} ${(compactVoiceTranscript || (editMode && editText)) ? 'has-transcript' : ''} ${editMode ? 'editing' : ''}`} role="status" aria-live="polite" title={!editMode ? 'Double-tap to edit reminder text' : undefined} onDoubleClick={requestCompactTextEdit} onTouchEnd={handleCompactTitleTouchEnd}>
-      {!editMode && <span className="voice-star-wrap"><Sparkles size={15}/></span>}
-      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={compactEditRows} aria-label="Edit reminder text" autoFocus /> : <span className="voice-box-text">{compactTitleText}</span>}
+      {editMode ? <textarea className="voice-box-input" value={editText} onChange={event => onEditText?.(event.target.value)} rows={compactEditRows} placeholder="Note to recipient:" aria-label="Edit reminder text" autoFocus /> : <span className={`voice-box-text ${hasRealNoteText ? 'has-note-text' : 'is-default-note'}`}>{compactTitleText}</span>}
     </div> : editMode && recipientMode ? <textarea className="recipient-title-inline" value={editText} onChange={event => onEditText?.(event.target.value)} rows={2} aria-label="Edit reminder text" autoFocus /> : <h3 className={`preview-title ${recipientMode && !displayTitle ? 'empty-title' : ''}`}>{displayTitle}</h3>}
     <div className={`due ${status.tone} ${scheduleIsDefault ? 'schedule-default' : ''} ${scheduleTouched ? 'schedule-active' : ''} ${scheduleOnlyEditOpen ? 'schedule-only-open' : ''}`} title={compactMode && !editMode ? 'Double-tap to edit date and time' : undefined} onDoubleClick={openScheduleOnlyEdit} onTouchEnd={handleScheduleTouchEnd}><span className="due-left"><CalendarClock size={17}/> <span>{dueLabel}</span></span>{urgencyPreviewLabel && <span className="preview-importance">{urgencyPreviewLabel}</span>}</div>
     {(editMode || scheduleOnlyEditOpen) && <div className={`preview-edit-schedule ${scheduleOnlyEditOpen && !editMode ? 'schedule-only' : ''}`} onFocus={clearScheduleOnlyCloseTimer} onBlur={handleScheduleOnlyBlur}>
@@ -1821,7 +1821,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {editMode && onEditLocation && <div className="recipient-inline-location-edit preview-inline-location-edit">
       <label><span>Address</span><input value={editLocation} onChange={event => onEditLocation?.(event.target.value)} aria-label="Edit reminder address" placeholder="Type address, venue, landmark, or paste link" /></label>
     </div>}
-    <div className="inline-actions inline-actions-under-calendar">{!recipientMode && <button type="button" className={editMode ? 'preview-edit-done blinking' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>}</div>
+    <div className="inline-actions inline-actions-under-calendar">{!recipientMode && <button type="button" className={editMode ? 'preview-edit-done blinking preview-edit-done-floating' : ''} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button>}</div>
     {editMode && <div className="preview-loctools-inline compact-icon-tools" aria-label="Location tools options">
       {canEditMapPin && <button type="button" className="preview-loctools-option compact-icon-tool" aria-label="Drop pin on map" title="Drop pin on map" onClick={() => { setExpanded(true); setPreviewPinPickerOpen(true); }}><MapPin size={18}/><span>Pin</span></button>}
       {onUseMyLocation && <button type="button" className="preview-loctools-option compact-icon-tool" aria-label="Use my location" title="Use my location" onClick={() => { onUseMyLocation(); }}><LocateFixed size={18}/><span>User Location</span></button>}
@@ -1842,8 +1842,8 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     </div>}
     {compactMode && !recipientMode ? <>
       <p className="card-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</p>
-      {reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className="primary compact-preview-send-cta composer-recipient-cta" onClick={onForward}><Send size={16}/> Send to whom?</button></div>)}
-    </> : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
+      {reminder.sentAt ? <div className="compact-preview-sent-row"><span className="preview-sent-stamp"><CheckCircle2 size={15}/> Sent {formatSentStamp(reminder.sentAt)}</span></div> : (sendPanelOpen ? null : <div className="compact-preview-send-row"><button type="button" className={`primary compact-preview-send-cta composer-recipient-cta ${blinkSendCta ? 'send-cta-blinking' : ''}`} onClick={onForward}><Send size={16}/> Send to whom?</button></div>)}
+    </> : <div className="hint preview-recipient-note">{recipientMode ? <><span>Interactive shared reminder.</span><button type="button" className={`shared-footer-edit-button ${editMode ? 'preview-edit-done blinking preview-edit-done-floating' : ''}`} onClick={onEdit}>{editMode ? 'Done editing' : 'Edit schedule & location'}</button><span className="shared-expiry-note">This card will automatically expire 24 hours after the scheduled meeting date and time.</span></> : <><span>Recipients can adjust the schedule and location.</span><span>They can enable tracking from the live map.</span></>}</div>}
   </article>;
 }
 
@@ -2753,6 +2753,7 @@ function App() {
   const [voiceRecipientText, setVoiceRecipientText] = useState('');
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [previewEditOpen, setPreviewEditOpen] = useState(false);
+  const [justFinishedEditing, setJustFinishedEditing] = useState(false);
   const [previewLocationToolsOpen, setPreviewLocationToolsOpen] = useState(false);
   const [settingsPopup, setSettingsPopup] = useState(null);
   const sharedLocationSaveRef = useRef({ time: 0, signature: '' });
@@ -3726,7 +3727,7 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendMapOnly(false); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onSendMapOnly={() => { setSendMapOnly(true); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); if (entering) { setJustFinishedEditing(false); } else { setJustFinishedEditing(true); } return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendMapOnly(false); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onSendMapOnly={() => { setSendMapOnly(true); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} blinkSendCta={justFinishedEditing && !sendOpen} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
