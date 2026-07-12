@@ -27,7 +27,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.19').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.20').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -47,9 +47,13 @@ function compareAppVersions(a, b) {
 function deviceDownloadUrl(manifest = {}) {
   const urls = manifest.downloadUrls || manifest.download_urls || {};
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  if (/iphone|ipad|ipod/i.test(ua)) return urls.ios || manifest.iosDownloadUrl || DEFAULT_IOS_DOWNLOAD_URL || urls.android || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
-  if (/android/i.test(ua)) return urls.android || manifest.androidDownloadUrl || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
-  return urls.web || manifest.webDownloadUrl || urls.android || manifest.downloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL;
+  const isStoreUrl = (u) => typeof u === 'string' && /(play\.google\.com|apps\.apple\.com)/i.test(u);
+  // A generic manifest.downloadUrl is only honored if it points at an app store,
+  // never a code host like GitHub (which is not where end users get the app).
+  const safeManifestUrl = isStoreUrl(manifest.downloadUrl) ? manifest.downloadUrl : '';
+  if (/iphone|ipad|ipod/i.test(ua)) return urls.ios || manifest.iosDownloadUrl || DEFAULT_IOS_DOWNLOAD_URL || DEFAULT_ANDROID_DOWNLOAD_URL || safeManifestUrl;
+  if (/android/i.test(ua)) return urls.android || manifest.androidDownloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL || safeManifestUrl;
+  return urls.web || manifest.webDownloadUrl || DEFAULT_ANDROID_DOWNLOAD_URL || safeManifestUrl;
 }
 
 function localUpdateManifestUrl() {
