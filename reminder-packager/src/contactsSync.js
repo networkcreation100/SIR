@@ -1,7 +1,7 @@
 // Contact auto-sync + auto-suggest for the Send Options recipient field.
 //
 // Goal: the Recipient field automatically knows the user's contacts (name +
-// phone/email) so it can auto-recognize what the user types and auto-fill /
+// phone) so it can auto-recognize what the user types and auto-fill /
 // auto-suggest matching contacts.
 //
 // Strategy by platform:
@@ -23,7 +23,7 @@ function isNative() {
   try { return Capacitor?.isNativePlatform?.() === true; } catch { return false; }
 }
 
-// A suggestion entry: { name, value, type: 'phone'|'email', label }
+// A suggestion entry: { name, value, type: 'phone', label }
 // `label` is what we show in the dropdown; `value` is what we fill in.
 function makeEntry(name, value, type) {
   const cleanName = (name || '').trim();
@@ -34,9 +34,6 @@ function makeEntry(name, value, type) {
   return { name: cleanName, value: cleanValue, type, label, fill };
 }
 
-function isEmailLike(v) {
-  return /@/.test(String(v || ''));
-}
 
 async function loadNativeContacts() {
   // Dynamically import so web builds never bundle-fail if the plugin is absent.
@@ -53,7 +50,7 @@ async function loadNativeContacts() {
     if (!granted) { lastError = 'Contacts permission not granted.'; return []; }
 
     const result = await Contacts.getContacts({
-      projection: { name: true, phones: true, emails: true },
+      projection: { name: true, phones: true },
     });
     const list = result?.contacts || [];
     const entries = [];
@@ -63,10 +60,6 @@ async function loadNativeContacts() {
         || '';
       for (const p of (c?.phones || [])) {
         const e = makeEntry(name, p?.number, 'phone');
-        if (e) entries.push(e);
-      }
-      for (const em of (c?.emails || [])) {
-        const e = makeEntry(name, em?.address, 'email');
         if (e) entries.push(e);
       }
     }
@@ -123,7 +116,7 @@ export function contactsSupported() {
 }
 
 // Public: given the text the user is typing in a recipient row, return the best
-// matching contact suggestions. Matches against name, phone, and email.
+// matching contact suggestions. Matches against name and phone.
 export function suggestContacts(query, limit = 6) {
   const entries = getCachedContacts();
   if (!entries.length) return [];

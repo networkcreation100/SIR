@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>SIR</string>
+        <string>Synlive</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -47,10 +47,10 @@
 	<true/>
 
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SIR uses your location only when you choose to share it, so the live reminder map can show and refresh your route.</string>
+	<string>Synlive uses your location only when you choose to share it, so the live reminder map can show and refresh your route.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>SIR uses the microphone only when you tap a microphone button to speak reminder details or an address.</string>
+	<string>Synlive uses the microphone only when you tap a microphone button to speak reminder details or an address.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>SIR uses speech recognition only after you tap a microphone button to turn spoken reminder details into text.</string>
+	<string>Synlive uses speech recognition only after you tap a microphone button to turn spoken reminder details into text.</string>
 </dict>
 </plist>

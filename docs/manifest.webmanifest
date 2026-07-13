@@ -1,6 +1,6 @@
 {
-  "name": "SIR smart interactive reminder",
-  "short_name": "SIR",
+  "name": "Synlive smart interactive reminder",
+  "short_name": "Synlive",
   "description": "Create and share smart interactive reminders with schedule, location, route, voice, and recipient controls.",
   "start_url": "/",
   "display": "standalone",

@@ -1,4 +1,4 @@
-# SIR → Google Play: automatic signed .aab via GitHub Actions
+# Synlive → Google Play: automatic signed .aab via GitHub Actions
 
 You do NOT need Android Studio or a local Android SDK. GitHub builds and signs
 the `.aab` in the cloud and (optionally) uploads it straight to your Play account.

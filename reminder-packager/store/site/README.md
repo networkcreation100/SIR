@@ -1,11 +1,11 @@
-# SIR Privacy Policy — Website
+# Synlive Privacy Policy — Website
 
-A ready-to-host privacy policy site for **SIR (Smart Interactive Reminder)** by Network Creation LLC.
+A ready-to-host privacy policy site for **Synlive (smart interactive reminder)** by Network Creation LLC.
 
 ## Files
 - `index.html` — the page (references local images in `assets/`)
 - `assets/company-logo.png` — Network Creation logo
-- `assets/app-name.png` — SIR app-name banner
+- `assets/app-name.png` — Synlive app-name banner
 - `privacy-hosted.html` — standalone version that pulls images from public URLs (no assets folder needed)
 
 ## Fastest ways to publish (pick one, all free)

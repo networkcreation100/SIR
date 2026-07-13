@@ -1,4 +1,4 @@
-# SIR - Windows 11 keystore + GitHub secrets helper
+# Synlive - Windows 11 keystore + GitHub secrets helper
 # Run in PowerShell:  powershell -ExecutionPolicy Bypass -File .\make-keystore.ps1
 #
 # It will:
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $ks    = "sir-upload.jks"
 $alias = "sir-upload"
 
-Write-Host "=== SIR keystore generator ===" -ForegroundColor Cyan
+Write-Host "=== Synlive keystore generator ===" -ForegroundColor Cyan
 
 # check keytool
 $kt = Get-Command keytool -ErrorAction SilentlyContinue
@@ -31,7 +31,7 @@ $pw  = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
          [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 
 # generate keystore, non-interactive
-$dname = "CN=Network Creation LLC, OU=SIR, O=Network Creation LLC, L=Honolulu, ST=HI, C=US"
+$dname = "CN=Network Creation LLC, OU=Synlive, O=Network Creation LLC, L=Honolulu, ST=HI, C=US"
 keytool -genkeypair -v -keystore $ks -alias $alias -keyalg RSA -keysize 2048 `
   -validity 10000 -storepass $pw -keypass $pw -dname $dname
 

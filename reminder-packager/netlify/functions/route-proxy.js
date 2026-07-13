@@ -71,7 +71,7 @@ export default async (req) => {
     const osrmUrl = `https://router.project-osrm.org/route/v1/${profile}/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=false&alternatives=false`;
     let response;
     try {
-      response = await fetch(osrmUrl, { signal: controller.signal, headers: { 'user-agent': 'SIR-smart-reminder-route-proxy/1.0' } });
+      response = await fetch(osrmUrl, { signal: controller.signal, headers: { 'user-agent': 'Synlive-smart-reminder-route-proxy/1.0' } });
     } finally {
       clearTimeout(timer);
     }

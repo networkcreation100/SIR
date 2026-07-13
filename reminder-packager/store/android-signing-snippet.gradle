@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// SIR — Android release signing
+// Synlive — Android release signing
 // Paste the signingConfigs + buildTypes blocks below into
 // android/app/build.gradle inside the `android { ... }` block.
 // Create android/keystore.properties (do NOT commit it) with:

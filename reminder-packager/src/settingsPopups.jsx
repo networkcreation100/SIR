@@ -72,7 +72,7 @@ export function ContactSupportPopup({ onClose }) {
       return;
     }
     const supportRecipient = 'network.creation@outlook.com';
-    const mailSubject = `SIR support request: ${subject}`;
+    const mailSubject = `Synlive support request: ${subject}`;
     const mailBody = `From: ${name}\n\nSubject: ${subject}\n\nMessage:\n${message}`;
     const mailtoUrl = `mailto:${encodeURIComponent(supportRecipient)}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
     window.open(mailtoUrl, '_blank', 'noopener,noreferrer');

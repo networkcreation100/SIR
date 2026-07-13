@@ -1,9 +1,9 @@
-# SIR — Store Listing Content
+# Synlive — Store Listing Content
 
 Copy-paste these into App Store Connect and Google Play Console. Edit freely.
 
 ## App name
-SIR — Smart Interactive Reminder
+Synlive — smart interactive reminder
 
 ## Subtitle / short description (30–80 chars)
 Smart reminders you can send, share, and track live.
@@ -12,13 +12,13 @@ Smart reminders you can send, share, and track live.
 Create a reminder by voice or text, drop a location, and send an interactive link anyone can open, edit, and follow live on a map.
 
 ## Full description
-SIR (Smart Interactive Reminder) turns a quick note into a smart, shareable reminder.
+Synlive (smart interactive reminder) turns a quick note into a smart, shareable reminder.
 
-• Speak or type — SIR understands dates, times, places, and people from natural language.
-• Add a location and SIR maps it, with live GPS routing for whoever needs to get there.
+• Speak or type — Synlive understands dates, times, places, and people from natural language.
+• Add a location and Synlive maps it, with live GPS routing for whoever needs to get there.
 • Send an interactive reminder link by text or email — recipients can open it, adjust the schedule or location, and track the route on their own device.
 • Clean, mobile-first design with a compact voice mode and a full standard mode for manual entry.
-• Optional supporter contribution to help keep SIR growing.
+• Optional supporter contribution to help keep Synlive growing.
 
 No clutter, no accounts required to receive a reminder — just tap the link and go.
 
@@ -42,7 +42,7 @@ https://superagent-934909c8.base44.app
 4+ / Everyone
 
 ## What's New (version 1.0)
-First release of SIR — voice-driven smart reminders, live location sharing, and interactive shareable reminder links.
+First release of Synlive — voice-driven smart reminders, live location sharing, and interactive shareable reminder links.
 
 ## Screenshots needed
 - iPhone 6.7" (1290×2796) — 3 to 10 images

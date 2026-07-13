@@ -1,4 +1,4 @@
-# Self-Audit Report — SIR Smart Interactive Reminder
+# Self-Audit Report — Synlive smart interactive reminder
 
 Date: 2026-06-28 Pacific/Honolulu
 
@@ -6,7 +6,7 @@ Date: 2026-06-28 Pacific/Honolulu
 
 Status: PASS
 
-Performed a full audit and optimization cycle for the current React/Vite + Capacitor SIR codebase. Per user instruction, the complete baseline test cycle was run before applying changes.
+Performed a full audit and optimization cycle for the current React/Vite + Capacitor Synlive codebase. Per user instruction, the complete baseline test cycle was run before applying changes.
 
 ## Baseline before changes
 
@@ -145,7 +145,7 @@ PASS. The app is faster on the default path, keeps map behavior stable through a
 
 ## 2026-06-29 performance self-evaluation
 
-Goal: audit and optimize SIR for faster, more efficient operation without changing the approved mobile-first reminder flow.
+Goal: audit and optimize Synlive for faster, more efficient operation without changing the approved mobile-first reminder flow.
 
 Baseline:
 - Unit tests passed: 6/6 Vitest.
@@ -154,7 +154,7 @@ Baseline:
 - Leaflet remained isolated in a lazy map chunk rather than the startup bundle.
 
 Optimizations applied:
-- Replaced the external `lucide-react` runtime dependency with small local inline SVG icon components for the icons SIR actually uses.
+- Replaced the external `lucide-react` runtime dependency with small local inline SVG icon components for the icons Synlive actually uses.
 - Removed `lucide-react` from package dependencies, reducing install surface and eliminating the large icon dev dependency request from local startup.
 - Reduced recipient typing/render work by syncing recipient labels to Preview only when the Preview `Show` toggle is enabled. When hidden, recipient typing no longer causes unnecessary Preview recipient state/storage updates.
 

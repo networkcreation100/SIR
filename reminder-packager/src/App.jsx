@@ -3,8 +3,9 @@ import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles,
 import './styles.css';
 import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
 import { PREVIEW_SETTINGS_KEY, PREVIEW_REMINDERS_KEY, PREVIEW_RECIPIENTS_KEY, ISSUE_LOG_KEY, TIMEZONE_OPTIONS, isLocationUnset, formatDueForPreviewTimezone, readStoredValue, writeStoredValue, sameReminderCard, cleanupExpiredLocalReminderData } from './previewStorage.js';
-import { getEmailValidationError, isEmail, isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows } from './recipientUtils.js';
+import { isPhone, classifyRecipients, smartFormatRecipients, rowsFromRecipientText, classifyRecipientRows, normalizeRecipientRows, cleanRecipientName, isSafeRecipientName, formatRecipientInput } from './recipientUtils.js';
 import { startNativeSpeech, isNativePlatform } from './nativeSpeech.js';
+import { nativeContactPickerSupported, pickNativePhoneContact } from './nativeContactPicker.js';
 import { scheduleReminderNotification, ensureNotifyPermission, syncAppBadge, notifyAppUpdateAvailable } from './nativeNotify.js';
 import { syncContacts, suggestContacts, contactsSupported, getContactsError } from './contactsSync.js';
 
@@ -27,7 +28,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.20').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.21').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -393,6 +394,95 @@ const initialReminder = { ...normalizeReminder({
   scheduleTouched: false
 }), title: '', location: '', urgencySelected: false };
 
+
+const VERIFIED_PHONE_KEY = 'synlive:verified-phone';
+const PHONE_VERIFY_SESSION_MS = 5 * 60 * 1000;
+
+function normalizePhoneForVerification(value = '') {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return { raw, digits, e164: '', national: '', valid: false, message: 'Enter your phone number.' };
+  if (digits.length === 10) return { raw, digits, national: digits, e164: `+1${digits}`, valid: true, message: 'Phone number looks valid.' };
+  if (digits.length === 11 && digits.startsWith('1')) return { raw, digits, national: digits.slice(1), e164: `+${digits}`, valid: true, message: 'Phone number looks valid.' };
+  if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return { raw, digits, national: digits, e164: `+${digits}`, valid: true, message: 'International phone number looks valid.' };
+  return { raw, digits, e164: '', national: digits, valid: false, message: digits.length < 10 ? 'Phone number is too short.' : 'Phone number has too many digits.' };
+}
+
+function formatPhoneForDisplay(value = '') {
+  const normalized = normalizePhoneForVerification(value);
+  const digits = normalized.national || normalized.digits;
+  if (digits.length === 10) return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+  return normalized.e164 || String(value || '').trim();
+}
+
+function readVerifiedPhone() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(VERIFIED_PHONE_KEY) || 'null');
+    if (stored?.phone && normalizePhoneForVerification(stored.phone).valid) return stored;
+  } catch {}
+  return null;
+}
+
+function saveVerifiedPhone(phone) {
+  const normalized = normalizePhoneForVerification(phone);
+  if (!normalized.valid) return null;
+  const record = { phone: normalized.e164, displayPhone: formatPhoneForDisplay(normalized.e164), verifiedAt: new Date().toISOString(), provider: 'phone-verification' };
+  try { window.localStorage.setItem(VERIFIED_PHONE_KEY, JSON.stringify(record)); } catch {}
+  return record;
+}
+
+function createVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function startIntroAmbientAudio(audioRef) {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass || audioRef.current?.ctx) return;
+    const ctx = new AudioContextClass();
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0.055, ctx.currentTime + 1.6);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(620, ctx.currentTime);
+    filter.Q.setValueAtTime(0.8, ctx.currentTime);
+    filter.connect(master);
+    master.connect(ctx.destination);
+    const nodes = [110, 146.83, 196].map((freq, index) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      osc.detune.setValueAtTime((index - 1) * 6, ctx.currentTime);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.22, ctx.currentTime);
+      const lfo = ctx.createOscillator();
+      lfo.frequency.setValueAtTime(0.045 + index * 0.018, ctx.currentTime);
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(0.08, ctx.currentTime);
+      lfo.connect(lfoGain); lfoGain.connect(gain.gain);
+      osc.connect(gain); gain.connect(filter);
+      osc.start(); lfo.start();
+      return { osc, lfo, gain };
+    });
+    audioRef.current = { ctx, nodes, master };
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  } catch {}
+}
+
+function stopIntroAmbientAudio(audioRef) {
+  const current = audioRef.current;
+  if (!current?.ctx) return;
+  try {
+    current.master?.gain?.setTargetAtTime(0, current.ctx.currentTime, 0.25);
+    window.setTimeout(() => {
+      current.nodes?.forEach(node => { try { node.osc?.stop(); node.lfo?.stop(); } catch {} });
+      try { current.ctx?.close?.(); } catch {}
+    }, 500);
+  } catch {}
+  audioRef.current = null;
+}
+
 const BACKGROUND_BLANK_REMINDER_ID = 'sir-preview-background-blank';
 
 function isBlankPreviewCard(reminder) {
@@ -530,7 +620,7 @@ class AppErrorBoundary extends React.Component {
       <section className="self-repair-panel critical" role="alert">
         <div>
           <p className="eyebrow tiny"><AlertTriangle size={13}/> Recovery mode</p>
-          <h1>SIR hit a display issue.</h1>
+          <h1>Synlive hit a display issue.</h1>
           <p>I saved the issue locally. Try repairing stored reminder data first; if it keeps happening, reset local data and reload.</p>
           <small>{compactIssueMessage(this.state.error?.message || this.state.error)}</small>
         </div>
@@ -1542,8 +1632,8 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
         <h2>Turn on location services</h2>
         <p>Location access is currently turned off, so we can’t share your live location.</p>
         <ul>
-          <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → Location Services → turn on, then allow SIR.</li>
-          <li><strong>Android:</strong> Settings → Location → turn on, then allow SIR.</li>
+          <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → Location Services → turn on, then allow Synlive.</li>
+          <li><strong>Android:</strong> Settings → Location → turn on, then allow Synlive.</li>
           <li><strong>Browser:</strong> Site settings → Location → Allow, then reload.</li>
         </ul>
         <button type="button" className="primary location-help-done" onClick={() => setLocationHelpOpen(false)}>Got it</button>
@@ -1892,17 +1982,52 @@ function rowsFromVoiceRecipientText(text = '') {
 
 
 function isContactSearchRequest(text = '') {
-  return /\b(contact|contacts|phone number|email address|email|number|send to|recipient)\b/i.test(String(text || ''));
+  return /\b(contact|contacts|phone number|number|send to|recipient)\b/i.test(String(text || ''));
+}
+
+function contactNameToText(name) {
+  if (!name) return '';
+  if (Array.isArray(name)) return contactNameToText(name[0]);
+  if (typeof name === 'string') return name;
+  return [name.display, name.formatted, name.givenName, name.familyName].filter(Boolean).join(' ');
+}
+
+function contactPhoneToText(phone) {
+  if (!phone) return '';
+  if (typeof phone === 'string') return phone;
+  return phone.value || phone.number || phone.phoneNumber || phone.address || '';
 }
 
 function rowsFromDeviceContacts(deviceContacts = []) {
   return deviceContacts.flatMap(contact => {
-    const rawName = Array.isArray(contact?.name) ? contact.name[0] : contact?.name;
-    const name = cleanRecipientName(rawName || '');
-    const entries = [...(contact?.tel || []), ...(contact?.email || [])].filter(Boolean);
-    return entries.map(value => formatRecipientInput({ name: isSafeRecipientName(name) ? name : '', value, type: isEmail(value) ? 'email' : 'phone' }));
+    const name = cleanRecipientName(contactNameToText(contact?.name || contact?.displayName || contact?.fullName));
+    const phones = Array.isArray(contact?.tel) ? contact.tel : Array.isArray(contact?.phones) ? contact.phones : contact?.tel ? [contact.tel] : contact?.phone ? [contact.phone] : [];
+    return phones.map(contactPhoneToText).filter(Boolean).map(value => formatRecipientInput({ name: isSafeRecipientName(name) ? name : '', value, type: 'phone' }));
   }).filter(Boolean);
 }
+
+function canUseDeviceContactPicker() {
+  return nativeContactPickerSupported() || Boolean(typeof navigator !== 'undefined' && navigator.contacts?.select);
+}
+
+async function pickDeviceContactRows({ multiple = true } = {}) {
+  if (nativeContactPickerSupported()) {
+    const result = await pickNativePhoneContact();
+    if (result.supported) {
+      const rows = result.contact ? rowsFromDeviceContacts([result.contact]) : [];
+      return { rows, supported: true, cancelled: result.cancelled };
+    }
+  }
+  if (!navigator.contacts?.select) return { rows: [], supported: false, cancelled: false };
+  try {
+    const selected = await navigator.contacts.select(['name', 'tel'], { multiple });
+    const rows = rowsFromDeviceContacts(selected);
+    return { rows, supported: true, cancelled: false };
+  } catch {
+    return { rows: [], supported: true, cancelled: true };
+  }
+}
+
 
 function getSpeechRecognition() {
   if (typeof window === 'undefined') return null;
@@ -2136,7 +2261,7 @@ function parseNamedPlaceRequest(location = '') {
 
 function parseVoiceReminder(text) {
   const contactText = normalizeSpokenRecipientText(text);
-  const recipients = classifyRecipients(contactText).values.filter(value => isPhone(value) || isEmail(value));
+  const recipients = classifyRecipients(contactText).values.filter(value => isPhone(value));
   const date = parseVoiceDate(text);
   const time = parseVoiceTime(text);
   const location = parseVoiceLocation(text);
@@ -2196,22 +2321,19 @@ function listContacts(values = []) {
 
 function describeInvalidContact(value) {
   const text = String(value || '').trim();
-  if (text.includes('@')) {
-    const reason = getEmailValidationError(text);
-    return reason ? `${text} (${reason})` : text;
-  }
+  if (text.includes('@')) return `${text} (email sending has been removed; enter a phone number)`;
   const digits = text.replace(/\D/g, '');
   if (digits && !isPhone(text)) return `${text} (phone number is incomplete or has the wrong digit count)`;
   return text;
 }
 
-function buildValidationFailureMessage(invalid, phones, emails) {
+function buildValidationFailureMessage(invalid, phones) {
   const described = invalid.map(describeInvalidContact);
-  return `Delivery failed before sending. Invalid contact${invalid.length === 1 ? '' : 's'}: ${listContacts(described)}. Recognized contacts — text: ${listContacts(phones)}; email: ${listContacts(emails)}.`;
+  return `Delivery failed before sending. Invalid contact${invalid.length === 1 ? '' : 's'}: ${listContacts(described)}. Recognized phone recipients — text: ${listContacts(phones)}.`;
 }
 
 function buildComposeConfirmationMessage(channel, contacts) {
-  const label = channel === 'email' ? 'email compose' : channel === 'text' ? 'text message app' : 'share sheet';
+  const label = channel === 'text' ? 'text message app' : 'share sheet';
   return `Confirmation: ${label} opened for ${listContacts(contacts)}. Delivery is pending until you press Send in that app.`;
 }
 
@@ -2230,7 +2352,7 @@ function openDeliveryLinkAfterConfirmation(href) {
     return;
   }
 
-  // On real phones, opening sms:/mailto: immediately can steal focus before
+  // On real phones, opening sms: immediately can steal focus before
   // React paints the web-style “Reminder sent” modal. Mobile now waits until
   // the modal has appeared and the user dismisses it, then opens the delivery
   // app. This keeps the visible flow identical to web: confirmation first,
@@ -2250,15 +2372,98 @@ function openDeliveryLinkAfterConfirmation(href) {
   window.setTimeout(waitForDismissal, 40);
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress, mapOnly = false }) {
+
+function PhoneVerificationGate({ onVerified }) {
+  const [phoneInput, setPhoneInput] = useState('');
+  const [stage, setStage] = useState('phone');
+  const [codeInput, setCodeInput] = useState('');
+  const [challenge, setChallenge] = useState(null);
+  const [status, setStatus] = useState('');
+  const validation = normalizePhoneForVerification(phoneInput);
+  const expiresInSeconds = challenge ? Math.max(0, Math.ceil((challenge.expiresAt - Date.now()) / 1000)) : 0;
+  const expiresLabel = `${Math.floor(expiresInSeconds / 60)}:${String(expiresInSeconds % 60).padStart(2, '0')}`;
+
+  useEffect(() => {
+    if (!challenge) return;
+    const timer = window.setInterval(() => {
+      if (Date.now() > challenge.expiresAt) {
+        setChallenge(null);
+        setStage('phone');
+        setCodeInput('');
+        setStatus('Verification code expired. Please re-enter your phone number.');
+      } else setChallenge(current => current ? { ...current } : current);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [challenge?.expiresAt]);
+
+  function requestCode() {
+    if (!validation.valid) {
+      setStatus(validation.message);
+      return;
+    }
+    const code = createVerificationCode();
+    setChallenge({ phone: validation.e164, code, expiresAt: Date.now() + PHONE_VERIFY_SESSION_MS });
+    setStage('code');
+    setCodeInput('');
+    setStatus('Verification code sent. Enter it within 5 minutes.');
+  }
+
+  function verifyCode() {
+    if (!challenge || Date.now() > challenge.expiresAt) {
+      setChallenge(null);
+      setStage('phone');
+      setCodeInput('');
+      setStatus('Verification code expired. Please re-enter your phone number.');
+      return;
+    }
+    if (String(codeInput).trim() !== challenge.code) {
+      setStatus('That code is incorrect. Please re-enter your phone number and request a new code.');
+      setChallenge(null);
+      setStage('phone');
+      setCodeInput('');
+      return;
+    }
+    const record = saveVerifiedPhone(challenge.phone);
+    if (record) onVerified?.(record);
+  }
+
+  return <section className="phone-verify-page" aria-label="Phone verification">
+    <img className="phone-verify-bg" src="synlive-phone-bg.png" alt="" aria-hidden="true" />
+    <div className="phone-verify-scrim" aria-hidden="true" />
+    <div className="phone-verify-content">
+      <img className="phone-verify-logo" src="synlive-phone-logo.png" alt="Synlive" />
+      <div className="phone-holder-stage" aria-hidden="true"><div className="phone-holder-device"><div className="phone-holder-speaker" /><div className="phone-holder-screen"><Smartphone size={34}/></div></div></div>
+      <div className="phone-verify-card">
+        <p className="phone-verify-kicker">Phone-based verification only</p>
+        <h2>Please enter your phone number.</h2>
+        <p className="phone-verify-copy">This number becomes the sender identity when you send a reminder.</p>
+        <label className={`phone-input-wrap ${phoneInput ? (validation.valid ? 'valid' : 'invalid') : ''}`}>
+          <span>Phone number</span>
+          <input value={phoneInput} onChange={event => { setPhoneInput(event.target.value); setStatus(''); }} inputMode="tel" autoComplete="tel" placeholder="(808) 555-0123" disabled={stage === 'code'} />
+        </label>
+        {phoneInput && <p className={`phone-validation ${validation.valid ? 'valid' : 'invalid'}`}>{validation.message}{validation.valid ? ` · ${formatPhoneForDisplay(validation.e164)}` : ''}</p>}
+        {stage === 'phone' ? <button type="button" className="phone-verify-primary" disabled={!validation.valid} onClick={requestCode}>Send verification code</button> : <div className="phone-code-block">
+          <label className="phone-input-wrap"><span>Verification code</span><input value={codeInput} onChange={event => setCodeInput(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" /></label>
+          <p className="phone-validation valid">Code expires in {expiresLabel}</p>
+          <button type="button" className="phone-verify-primary" disabled={codeInput.length !== 6} onClick={verifyCode}>Verify and continue</button>
+          <button type="button" className="phone-verify-secondary" onClick={() => { setStage('phone'); setChallenge(null); setCodeInput(''); setStatus('Please re-enter your phone number.'); }}>Re-enter phone number</button>
+        </div>}
+        {challenge?.code && <p className="phone-preview-code">Preview code: <strong>{challenge.code}</strong></p>}
+        {status && <p className={`phone-verify-status ${/sent|valid|verified/i.test(status) ? 'valid' : 'invalid'}`}>{status}</p>}
+      </div>
+    </div>
+  </section>;
+}
+
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress, mapOnly = false, verifiedSenderPhone = '', pickedContactBatch = { id: 0, rows: [] }, onPickedContactRowsConsumed }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
   const [shareUrl, setShareUrl] = useState('');
-  const [secondaryEmailLink, setSecondaryEmailLink] = useState('');
   const [recipientListening, setRecipientListening] = useState(false);
   const recipientRecognitionRef = useRef(null);
   const recipientSilenceTimerRef = useRef(null);
+  const initialRecipientTextRef = useRef(initialRecipientText || '');
   const [recipientVoiceText, setRecipientVoiceText] = useState('');
   const preGeneratedCardRef = useRef({ key: '', promise: null, result: null, error: null });
   const [smartCardStatus, setSmartCardStatus] = useState('idle');
@@ -2272,19 +2477,34 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   const dragStartYRef = useRef(null);
   const dragDeltaRef = useRef(0);
   const [dragOffset, setDragOffset] = useState(0);
-  const { values: recipients, phones, emails, invalid, contacts, labels: recipientLabels, duplicates } = classifyRecipientRows(recipientRows);
+  const { values: recipients, phones, invalid, contacts, labels: recipientLabels, duplicates } = classifyRecipientRows(recipientRows);
   const namedRecipientCount = contacts.filter(contact => contact.name).length;
   const valid = recipients.length > 0 && invalid.length === 0;
   const hasRecipientText = recipientRows.some(row => row.trim());
-  const route = phones.length ? 'text' : emails.length ? 'email' : '';
+  const route = phones.length ? 'text' : '';
+
+  useEffect(() => {
+    const rows = pickedContactBatch?.rows || [];
+    if (!pickedContactBatch?.id || !rows.length) return;
+    appendPickedRecipientRows(rows, `Added ${rows.length} contact${rows.length === 1 ? '' : 's'} from your device. The next box is ready.`);
+    onPickedContactRowsConsumed?.();
+  }, [pickedContactBatch?.id]);
+
+  useEffect(() => {
+    const text = String(initialRecipientText || '').trim();
+    if (!text || initialRecipientTextRef.current === text) return;
+    initialRecipientTextRef.current = text;
+    const rows = rowsFromRecipientText(text);
+    if (rows.length) appendPickedRecipientRows(rows, 'Contact selected from your device. The next box is ready.');
+  }, [initialRecipientText]);
 
 
   function getPreparedShareInputs() {
     const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
     const deliveryRecipients = recipients;
-    const channel = phones.length ? 'sms-share' : 'email-share';
+    const channel = 'sms-share';
     const payload = {
-      ...normalizeReminder({ ...reminder, recipients: displayRecipients, permission: 'shared-edit' }),
+      ...normalizeReminder({ ...reminder, sender: verifiedSenderPhone || reminder.sender, senderPhone: verifiedSenderPhone || reminder.senderPhone, recipients: displayRecipients, permission: 'shared-edit' }),
       title: cleanPreviewCardTitle(reminder.title)
     };
     const key = JSON.stringify({
@@ -2303,7 +2523,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   async function generateSharedCard(prepared) {
     const saved = await reminderSync({
       action: 'save',
-      editor: reminder.sender || 'sender',
+      editor: verifiedSenderPhone || reminder.sender || 'sender',
       channel: prepared.channel,
       recipients: prepared.deliveryRecipients,
       payload: prepared.payload
@@ -2318,7 +2538,13 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     const normalized = normalizeRecipientRows(rows);
     setRecipientRows(normalized.rows);
     setMessage('');
-    setSecondaryEmailLink('');
+        setRecipientNotice(normalized.duplicates.length ? `Removed ${normalized.duplicates.length} duplicate recipient${normalized.duplicates.length === 1 ? '' : 's'}.` : notice);
+  }
+
+  function appendPickedRecipientRows(rows, notice = '') {
+    const normalized = normalizeRecipientRows([...recipientRows.filter(row => row.trim()), ...rows]);
+    setRecipientRows([...(normalized.rows.length ? normalized.rows : ['']), '']);
+    setMessage('');
     setRecipientNotice(normalized.duplicates.length ? `Removed ${normalized.duplicates.length} duplicate recipient${normalized.duplicates.length === 1 ? '' : 's'}.` : notice);
   }
 
@@ -2329,8 +2555,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     else {
       setRecipientRows(next);
       setMessage('');
-      setSecondaryEmailLink('');
-      setRecipientNotice('');
+            setRecipientNotice('');
     }
   }
 
@@ -2342,9 +2567,15 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     commitRecipientRows(next.map(row => smartFormatRecipients(row)));
   }
 
-  function addRecipientRow() {
+  async function addRecipientRow() {
+    setRecipientNotice('Opening contacts…');
+    const result = await pickDeviceContactRows({ multiple: false });
+    if (result.supported && result.rows.length) {
+      appendPickedRecipientRows(result.rows, `Added ${result.rows.length} contact${result.rows.length === 1 ? '' : 's'} from your device. The next box is ready.`);
+      return;
+    }
     setRecipientRows(rows => [...rows, '']);
-    setRecipientNotice('');
+    setRecipientNotice(result.supported && result.cancelled ? 'Contact picker was cancelled. A blank recipient box is ready.' : 'Device contact picker is not available here. A blank recipient box is ready.');
   }
 
   function removeRecipientRow(index) {
@@ -2354,23 +2585,17 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
 
 
   async function pickDeviceContactFromVoice(query = '') {
-    if (!navigator.contacts?.select) {
-      setRecipientNotice('Voice captured. Device contact search is not supported here, so speak or type the phone number/email address.');
+    const result = await pickDeviceContactRows({ multiple: true });
+    if (!result.supported) {
+      setRecipientNotice('Voice captured. Device contact search is not supported here, so speak or type the phone number.');
       return false;
     }
-    try {
-      const selected = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: true });
-      const rows = rowsFromDeviceContacts(selected);
-      if (!rows.length) {
-        setRecipientNotice('No phone number or email address was selected from contacts.');
-        return false;
-      }
-      commitRecipientRows([...recipientRows.filter(row => row.trim()), ...rows], `Voice contact search added ${rows.length} contact entr${rows.length === 1 ? 'y' : 'ies'}.`);
-      return true;
-    } catch {
-      setRecipientNotice('Contact search was cancelled or unavailable.');
+    if (!result.rows.length) {
+      setRecipientNotice(result.cancelled ? 'Contact search was cancelled.' : 'No phone number was selected from contacts.');
       return false;
     }
+    commitRecipientRows([...recipientRows.filter(row => row.trim()), ...result.rows], `Voice contact search added ${result.rows.length} contact entr${result.rows.length === 1 ? 'y' : 'ies'}.`);
+    return true;
   }
 
   async function applyRecipientVoiceTranscript(transcript) {
@@ -2386,7 +2611,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       await pickDeviceContactFromVoice(transcript);
       return;
     }
-    setRecipientNotice(`Voice captured: “${transcript}”. Say a phone number, an email address, or ask to search contacts.`);
+    setRecipientNotice(`Voice captured: “${transcript}”. Say a phone number or ask to search contacts.`);
   }
 
   async function startRecipientVoiceSearch() {
@@ -2454,7 +2679,7 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   }, [initialRecipientText]);
 
   // Auto-sync the user's contact list once the Send Options panel mounts so the
-  // Recipient field can auto-recognize and auto-suggest names/phones/emails.
+  // Recipient field can auto-recognize and auto-suggest names/phones.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2538,12 +2763,11 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       preGeneratedCardRef.current = { key: prepared.key, promise, result: null, error: null };
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [valid, recipients.join('|'), recipientLabels.join('|'), phones.length, emails.length, reminder.title, reminder.date, reminder.time, reminder.location, JSON.stringify(reminder.locationPin || null)]);
+  }, [valid, recipients.join('|'), recipientLabels.join('|'), phones.length, reminder.title, reminder.date, reminder.time, reminder.location, JSON.stringify(reminder.locationPin || null)]);
 
   async function share() {
-    setSecondaryEmailLink('');
-    if (invalid.length) {
-      setMessage(buildValidationFailureMessage(invalid, phones, emails));
+        if (invalid.length) {
+      setMessage(buildValidationFailureMessage(invalid, phones));
       return;
     }
     if (!recipients.length) {
@@ -2616,17 +2840,11 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
       try { onSent && onSent(sentStampedReminder); } catch (_) { /* ignore */ }
 
       if (phones.length) {
-        if (emails.length) setSecondaryEmailLink(createMailto(sharedReminder, emails, { mapOnly }));
-        setMessage(`${buildComposeConfirmationMessage('text', phones)}${emails.length ? ' Email recipient also recognized — open email after the text app if needed.' : ''}`);
+        setMessage(buildComposeConfirmationMessage('text', phones));
         openDeliveryLinkAfterConfirmation(createSmsLink(sharedReminder, phones, { mapOnly }));
         return;
       }
 
-      if (emails.length) {
-        setMessage(buildComposeConfirmationMessage('email', emails));
-        openDeliveryLinkAfterConfirmation(createMailto(sharedReminder, emails, { mapOnly }));
-        return;
-      }
     } catch (error) {
       const errorMessage = error.message || 'Could not create the shared reminder file.';
       setMessage(errorMessage);
@@ -2639,32 +2857,31 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   return <aside className={`send-panel ${collapsed ? 'collapsed-preview' : ''} ${sheetMinimized ? 'sheet-minimized' : ''}`} style={dragOffset ? { transform: `translateY(${dragOffset}px)` } : undefined} aria-label={collapsed ? 'Collapsed send options panel' : 'Send options panel'}>
     <div className="send-sheet-handle" role="button" tabIndex={0} aria-label={sheetMinimized ? 'Slide up to expand Send Options' : 'Slide down to minimize Send Options'} aria-expanded={!sheetMinimized} onClick={toggleSheet} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); } }} onPointerDown={e => { e.currentTarget.setPointerCapture?.(e.pointerId); handleDragStart(e.clientY); }} onPointerMove={e => handleDragMove(e.clientY)} onPointerUp={handleDragEnd} onPointerCancel={handleDragEnd} onTouchStart={e => handleDragStart(e.touches[0]?.clientY)} onTouchMove={e => handleDragMove(e.touches[0]?.clientY)} onTouchEnd={handleDragEnd}><span className="send-sheet-grabber" /></div>
     <div className="panel-header compact send-options-header"><div><p className="eyebrow tiny">Send options</p><h2>Send reminder</h2></div><div className="send-options-header-actions"><button type="button" className="send-panel-close" aria-label="Close Send Reminder panel" onClick={onClose}><X size={16}/></button></div></div>
-    <p className="panel-copy">Type a name with a phone number or email address. Matching contacts fill in automatically.</p>
-    <Field label={<span className="recipient-label-row"><span>Recipient</span><span className="recipient-show-toggle"><input type="checkbox" checked={showRecipientsInPreview} onChange={e => onShowRecipientsChange?.(e.target.checked)} aria-label="Show recipient in Preview" /> Show</span></span>} error={invalid.length ? 'Fix the red recipient before sending.' : ''} hint={valid ? `${recipients.length} validated recipient${recipients.length === 1 ? '' : 's'}${namedRecipientCount ? ` · ${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} identified` : ''} · ${phones.length ? `${phones.length} text message${phones.length === 1 ? '' : 's'}` : ''}${phones.length && emails.length ? ' · ' : ''}${emails.length ? `${emails.length} email${emails.length === 1 ? '' : 's'}` : ''}` : 'One contact per row. Add another row for multiple contacts.'}>
+    <p className="panel-copy">Pick a phone contact, or type a phone number manually.</p>
+    <Field label={<span className="recipient-label-row"><span>Recipient</span><span className="recipient-show-toggle"><input type="checkbox" checked={showRecipientsInPreview} onChange={e => onShowRecipientsChange?.(e.target.checked)} aria-label="Show recipient in Preview" /> Show</span></span>} error={invalid.length ? 'Fix the red recipient before sending.' : ''} hint={valid ? `${recipients.length} validated recipient${recipients.length === 1 ? '' : 's'}${namedRecipientCount ? ` · ${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} identified` : ''} · ${phones.length ? `${phones.length} text message${phones.length === 1 ? '' : 's'}` : ''}` : 'One contact per row. Add another row for multiple contacts.'}>
       <div className="recipient-row-list">
         {recipientRows.map((row, index) => {
           const rowClassified = classifyRecipients(row);
           const rowInvalid = row.trim() && (rowClassified.invalid.length || rowClassified.values.length > 1);
           const showSuggest = activeSuggestRow === index && contactSuggestions.length > 0;
           return <div className={`recipient-entry-row ${rowInvalid ? 'invalid' : ''} ${showSuggest ? 'suggesting' : ''}`} key={index}>
-            <input value={row} onChange={e => { updateRecipientRow(index, e.target.value); refreshSuggestions(index, e.target.value); }} onPaste={e => handleRecipientPaste(index, e)} onFocus={e => refreshSuggestions(index, e.target.value)} onBlur={e => { window.setTimeout(() => setActiveSuggestRow(current => current === index ? -1 : current), 150); updateRecipientRow(index, e.target.value, true); }} aria-label={`Recipient ${index + 1}`} autoComplete="off" placeholder={index === 0 ? 'Name + one phone/email' : 'Another phone/email'} />
+            <input value={row} onChange={e => { updateRecipientRow(index, e.target.value); refreshSuggestions(index, e.target.value); }} onPaste={e => handleRecipientPaste(index, e)} onFocus={e => refreshSuggestions(index, e.target.value)} onBlur={e => { window.setTimeout(() => setActiveSuggestRow(current => current === index ? -1 : current), 150); updateRecipientRow(index, e.target.value, true); }} aria-label={`Recipient ${index + 1}`} autoComplete="off" placeholder={index === 0 ? 'Name + phone number' : 'Another phone number'} />
             {recipientRows.length > 1 && <button type="button" className="ghost recipient-row-remove" aria-label={`Remove recipient ${index + 1}`} onClick={() => removeRecipientRow(index)}><X size={14}/></button>}
             {showSuggest && <ul className="recipient-suggest-list" role="listbox" aria-label="Contact suggestions">
               {contactSuggestions.map((entry, si) => <li key={`${entry.type}-${entry.value}-${si}`} role="option" aria-selected="false"><button type="button" className="recipient-suggest-item" onMouseDown={e => { e.preventDefault(); applyContactSuggestion(index, entry); }}>{entry.name ? <span className="suggest-name">{entry.name}</span> : null}<span className="suggest-value">{entry.value}</span></button></li>)}
             </ul>}
           </div>;
         })}
-        <button type="button" className="secondary full add-recipient-row" onClick={addRecipientRow}>Add another contact</button>
+        <button type="button" className="secondary full add-recipient-row" onClick={addRecipientRow}><Smartphone size={15}/> Add another contact</button>
       </div>
       {recipientNotice && <small className="recipient-notice">{recipientNotice}</small>}
     </Field>
     <div className={`recognition-banner compact ${valid ? 'valid' : invalid.length ? 'invalid' : ''}`} role="status" aria-live="polite">
-      {valid ? <><CheckCircle2 size={15}/> Ready: {namedRecipientCount ? `${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} · ` : ''}{phones.length ? `${phones.length} text` : ''}{phones.length && emails.length ? ' · ' : ''}{emails.length ? `${emails.length} email` : ''}</> : invalid.length ? <><AlertTriangle size={15}/> Fix unrecognized entry before Send.</> : <><Sparkles size={15}/> Smart field recognizes typed names, phones, and emails.</>}
+      {valid ? <><CheckCircle2 size={15}/> Ready: {namedRecipientCount ? `${namedRecipientCount} name${namedRecipientCount === 1 ? '' : 's'} · ` : ''}{phones.length ? `${phones.length} text` : ''}</> : invalid.length ? <><AlertTriangle size={15}/> Fix unrecognized entry before Send.</> : <><Sparkles size={15}/> Smart field recognizes typed names and phone numbers.</>}
     </div>
     {valid && <p className={`smart-card-status ${smartCardStatus}`}>{smartCardStatus === 'ready' ? 'Smart Mode card ready before Send.' : smartCardStatus === 'preparing' ? 'Smart Mode is pre-generating the card…' : 'Smart Mode will prepare the card before Send.'}</p>}
     <div className="modal-actions button-hierarchy"><button type="button" className="secondary cancel preview-collapse-action" onClick={previewAction}>{collapsed ? 'Back' : 'Preview'}</button><button type="button" className="primary send-dominant" onClick={share} disabled={!hasRecipientText}>Send</button></div>
     {message && <p className={!message.toLowerCase().includes('failed') && !message.toLowerCase().includes('could not') ? 'success' : 'field-error block'}>{message}</p>}
-    {secondaryEmailLink && <button type="button" className="secondary full" onClick={() => { window.location.href = secondaryEmailLink; }}>Open email for email recipient</button>}
   </aside>;
 }
 
@@ -2675,8 +2892,13 @@ function App() {
   const [reminders, setReminders] = useState(() => readStoredValue(PREVIEW_REMINDERS_KEY, [initialReminder]));
   const [sendOpen, setSendOpen] = useState(false);
   const [sendMapOnly, setSendMapOnly] = useState(false);
+  const [pendingPickedContactBatch, setPendingPickedContactBatch] = useState({ id: 0, rows: [] });
   const [sendCollapsed, setSendCollapsed] = useState(false);
   const [sentConfirmation, setSentConfirmation] = useState(null);
+  const [introOpen, setIntroOpen] = useState(true);
+  const [introMuted, setIntroMuted] = useState(false);
+  const [verifiedPhone, setVerifiedPhone] = useState(() => readVerifiedPhone());
+  const introAudioRef = useRef(null);
   const [updateAlert, setUpdateAlert] = useState(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
@@ -2689,13 +2911,29 @@ function App() {
   }, [sendOpen, sendCollapsed]);
 
   useEffect(() => {
+    if (introOpen && !introMuted) {
+      startIntroAmbientAudio(introAudioRef);
+      const unlock = () => startIntroAmbientAudio(introAudioRef);
+      window.addEventListener('pointerdown', unlock, { once: true });
+      return () => { window.removeEventListener('pointerdown', unlock); stopIntroAmbientAudio(introAudioRef); };
+    }
+    stopIntroAmbientAudio(introAudioRef);
+    return () => stopIntroAmbientAudio(introAudioRef);
+  }, [introOpen, introMuted]);
+
+  useEffect(() => {
+    if (!verifiedPhone?.phone) return;
+    setForm(prev => ({ ...prev, sender: verifiedPhone.phone, senderPhone: verifiedPhone.phone }));
+  }, [verifiedPhone?.phone]);
+
+  useEffect(() => {
     let cancelled = false;
     async function checkForUpdate() {
       const force = isForceUpdateAlertEnabled();
       const manifest = force ? {
         latestVersion: '99.0.0',
-        title: 'SIR update available',
-        message: 'A new SIR update is ready to download.',
+        title: 'Synlive update available',
+        message: 'A new Synlive update is ready to download.',
         downloadUrl: DEFAULT_ANDROID_DOWNLOAD_URL,
         forceTest: true
       } : await fetchUpdateManifest();
@@ -2706,7 +2944,7 @@ function App() {
       const info = {
         latestVersion,
         currentVersion: CURRENT_APP_VERSION,
-        title: manifest.title || 'SIR update available',
+        title: manifest.title || 'Synlive update available',
         message: manifest.message || `Version ${latestVersion} is ready to download.`,
         downloadUrl: deviceDownloadUrl(manifest),
         releaseNotes: manifest.releaseNotes || manifest.notes || '',
@@ -3357,14 +3595,14 @@ function App() {
 
   async function pullSmartContacts() {
     if (!navigator.contacts?.select) {
-      setVoiceStatus('Smart contacts need the device Contact Picker API. You can still speak or paste phone/email entries.');
+      setVoiceStatus('Smart contacts need the device Contact Picker API. You can still speak or paste phone entries.');
       return;
     }
     try {
-      const contacts = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: true });
+      const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
       const rows = rowsFromDeviceContacts(contacts);
       if (!rows.length) {
-        setVoiceStatus('No phone or email was selected from contacts.');
+        setVoiceStatus('No phone number was selected from contacts.');
         return;
       }
       applyRecognizedRecipientRows(rows);
@@ -3464,6 +3702,18 @@ function App() {
     if (!formValid) return;
     saveReminder();
     setSendOpen(true);
+  }
+
+  async function openSendWithContactPicker({ mapOnly = false } = {}) {
+    setSendMapOnly(mapOnly);
+    setSendOpen(true);
+    setSendCollapsed(false);
+    setStepFront(3);
+    const result = await pickDeviceContactRows({ multiple: false });
+    if (result.supported && result.rows.length) {
+      setVoiceRecipientText(result.rows.join(', '));
+      setPendingPickedContactBatch(batch => ({ id: batch.id + 1, rows: result.rows }));
+    }
   }
 
   function makeFreshBlankReminder() {
@@ -3647,6 +3897,31 @@ function App() {
   }
 
   return <main className="app-shell">
+    {!introOpen && !verifiedPhone?.phone && <PhoneVerificationGate onVerified={record => setVerifiedPhone(record)} />}
+    {introOpen && <div className="synlive-intro-overlay source-display" role="button" tabIndex={0} aria-label="Tap to continue to Synlive" onClick={() => setIntroOpen(false)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setIntroOpen(false); }}>
+      <div className="synlive-intro-scenes" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => <img key={index} className={`synlive-intro-scene scene-${index + 1}`} src={`synlive-intro-scene-${index + 1}.png`} alt="" />)}
+        <div className="synlive-intro-gradient" />
+      </div>
+      <button type="button" className="synlive-intro-sound" aria-label={introMuted ? 'Play ambient sound' : 'Mute ambient sound'} onClick={(event) => { event.stopPropagation(); setIntroMuted(value => !value); }}>
+        {introMuted ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z"/><path d="m17 9 4 4m0-4-4 4"/></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z"/><path d="M16 8.5c1.2 1 1.8 2.2 1.8 3.5S17.2 14.5 16 15.5"/><path d="M18.5 6c2 1.7 3 3.7 3 6s-1 4.3-3 6"/></svg>}
+      </button>
+      <div className="synlive-intro-brand" aria-hidden="true">
+        <h2>Synlive</h2>
+        <p>is for friends, family, and group coordination</p>
+      </div>
+      <div className="synlive-intro-center" aria-hidden="true">
+        <div className="synlive-intro-feature-card">
+          <p>• Share real-time location</p>
+          <p>• Stop sharing at any time</p>
+          <p>• Update meeting location</p>
+        </div>
+        <div className="synlive-intro-route-card">
+          <img src="synlive-intro-map.png" alt="" />
+        </div>
+      </div>
+      <div className="synlive-intro-tap" aria-hidden="true">Tap to continue</div>
+    </div>}
     {updateAlert && updateDialogOpen && <div className="update-dialog-overlay" role="presentation" onClick={() => setUpdateDialogOpen(false)}>
       <div className="update-dialog-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="update-dialog-close" aria-label="Close update dialog" onClick={() => setUpdateDialogOpen(false)}><X size={16}/></button>
@@ -3659,7 +3934,7 @@ function App() {
       </div>
     </div>}
     <section className="hero app-settings-hero">
-      <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">SIR</span><span className="brand-words">smart interactive reminder</span></h1></div>
+      <div><p className="eyebrow hero-platforms"><Smartphone size={16}/> <span className="platform-label">Android · iOS · Web</span></p><h1 className="brand-title"><span className="brand-sir">Synlive</span><span className="brand-words">smart interactive reminder</span></h1></div>
       <div className="app-settings-wrap"><button type="button" className={`app-settings-button ${appSettingsOpen ? 'open' : ''}`} aria-label={appSettingsOpen ? 'Close app settings' : `Open app settings${updateAlert ? ' — update available' : ''}`} onClick={() => setAppSettingsOpen(open => !open)}><Settings2 size={18}/>{updateAlert && <span className="app-settings-update-dot" aria-hidden="true" />}</button>{appSettingsOpen && <div className="app-settings-menu" role="menu" aria-label="App settings">
         <div className="settings-menu-head"><strong>Menu</strong><button type="button" className="settings-menu-close" aria-label="Close menu" onClick={() => setAppSettingsOpen(false)}><X size={16}/></button></div>
         {updateAlert && <div className="settings-menu-group">
@@ -3731,16 +4006,16 @@ function App() {
           <button type="button" className="ghost nav-arrow" aria-label="Next reminder" onClick={showNextPreviewCard}><ChevronRight size={15}/></button>
         </div>}
         <div key={previewMotionKey} className={`preview-card-motion ${previewMotionKey > 0 ? 'slide-up' : ''}`}>
-          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); if (entering) { setJustFinishedEditing(false); } else { setJustFinishedEditing(true); } return entering; }); } else { setStepFront(1); } }} onForward={() => { setSendMapOnly(false); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onSendMapOnly={() => { setSendMapOnly(true); setSendOpen(true); setSendCollapsed(false); setStepFront(3); }} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} blinkSendCta={justFinishedEditing && !sendOpen} />
+          <ReminderCard reminder={previewReminder} compactMode={compactMode} forceMap={compactMode} onCompactVoice={startPreviewVoiceFill} compactVoiceListening={listening && previewVoiceTargetIndex === currentPreviewIndex} compactVoiceTranscript={previewVoiceTargetIndex === currentPreviewIndex ? voiceTranscript : ''} onPinLocation={(lat, lng) => pinLocation(lat, lng)} onEdit={() => { if (compactMode) { setPreviewEditOpen(open => { const entering = !open; setForm(prev => { const base = { ...previewReminder }; if (entering && (!base.title || base.title.trim() === placeholderReminderTitle)) base.title = ''; return base; }); if (entering) { setJustFinishedEditing(false); } else { setJustFinishedEditing(true); } return entering; }); } else { setStepFront(1); } }} onForward={() => openSendWithContactPicker({ mapOnly: false })} onSendMapOnly={() => openSendWithContactPicker({ mapOnly: true })} onDelete={previewReminder.id === BACKGROUND_BLANK_REMINDER_ID ? undefined : deletePreviewCard} previewRecipients={previewRecipients} showRecipients={showRecipientsInPreview} onToggleRecipients={() => setShowRecipientsInPreview(value => !value)} previewTimezone={previewTimezone} onPreviewTimezoneChange={setPreviewTimezone} editMode={previewEditOpen} editDate={form.date} editTime={form.time} onEditDate={value => setField('date', value)} onEditTime={value => setField('time', value)} editLocation={form.location} onEditLocation={value => setField('location', value)} locationToolsOpen={previewLocationToolsOpen} onToggleLocationTools={() => setPreviewLocationToolsOpen(open => !open)} onUseMyLocation={useCurrentLocation} onClearLocation={clearLocation} locationStatus={locationStatus} editText={form.title} onEditText={value => setField('title', value)} sendPanelOpen={sendOpen} blinkSendCta={justFinishedEditing && !sendOpen} />
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} onClose={() => { setSendOpen(false); setSendMapOnly(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} onClose={() => { setSendOpen(false); setSendMapOnly(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); setSendMapOnly(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); setSendMapOnly(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
       </div>
     </div>}
     {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label={sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Reminder send error' : 'Reminder sent'} onClick={() => { if (!sentConfirmation.pending) setSentConfirmation(null); }}>

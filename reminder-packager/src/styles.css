@@ -806,7 +806,7 @@ button.mic-button.listening,button.address-mic-button.listening,.location-input-
 /* ============================================================
    MOBILE OPTIMIZATION (native app + small screens)
    - Hide "Android · iOS · Web" platform line
-   - Hide big "SIR smart interactive reminder" hero title
+   - Hide big "Synlive smart interactive reminder" hero title
    - Sharper text (reduce heavy glow shadows that blur on mobile)
    ============================================================ */
 @media(max-width:640px){
@@ -2791,3 +2791,389 @@ body.sir-send-collapsed{overflow-y:auto;}
   pointer-events:auto;
 }
 .preview-live-map.expanded .preview-map-send-maponly{ width:100%; }
+
+/* v1.0.21 — Synlive launch intro from source package */
+.synlive-intro-overlay.source-display{
+  position:fixed;
+  inset:0;
+  z-index:10020;
+  cursor:pointer;
+  overflow:hidden;
+  background:#000;
+  color:#fff;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.synlive-intro-scenes,
+.synlive-intro-scene,
+.synlive-intro-gradient{
+  position:absolute;
+  inset:0;
+}
+.synlive-intro-scene{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center center;
+  opacity:0;
+  filter:brightness(.75) contrast(1.05) saturate(.9);
+  transform:scale(1.03);
+  animation:synliveSceneFade 10s ease-in-out infinite, synliveSceneDrift 10s linear infinite;
+}
+.synlive-intro-scene.scene-1{opacity:1; animation-name:synliveSceneFadeFirst,synliveSceneDrift;}
+.synlive-intro-scene.scene-2{animation-delay:1.25s,0s;}
+.synlive-intro-scene.scene-3{animation-delay:2.5s,0s;}
+.synlive-intro-scene.scene-4{animation-delay:3.75s,0s;}
+.synlive-intro-scene.scene-5{animation-delay:5s,0s;}
+.synlive-intro-scene.scene-6{animation-delay:6.25s,0s;}
+.synlive-intro-scene.scene-7{animation-delay:7.5s,0s;}
+.synlive-intro-scene.scene-8{animation-delay:8.75s,0s;}
+.synlive-intro-gradient{
+  background:linear-gradient(to bottom,rgba(0,0,0,.4),rgba(0,0,0,.2) 42%,rgba(0,0,0,.55)),rgba(0,0,0,.1);
+  z-index:2;
+}
+.synlive-intro-sound{
+  position:absolute;
+  left:20px;
+  top:calc(18px + env(safe-area-inset-top,0px));
+  z-index:30;
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.15);
+  background:rgba(255,255,255,.1);
+  color:rgba(255,255,255,.72);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.synlive-intro-sound svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.synlive-intro-sound svg path:first-child{fill:currentColor;stroke:none;}
+.synlive-intro-brand{
+  pointer-events:none;
+  position:absolute;
+  left:50%;
+  top:8%;
+  z-index:30;
+  width:100%;
+  transform:translateX(-50%);
+  padding:0 12px;
+  text-align:center;
+}
+.synlive-intro-brand h2{
+  margin:0;
+  color:#fff;
+  font-size:clamp(48px,13vw,64px);
+  line-height:.95;
+  font-weight:900;
+  letter-spacing:.18em;
+  text-shadow:0 3px 28px rgba(0,0,0,.7);
+}
+.synlive-intro-brand p{
+  display:inline-block;
+  margin:10px 0 0;
+  white-space:nowrap;
+  max-width:96vw;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-size:clamp(11px,3vw,16px);
+  line-height:1.25;
+  font-style:italic;
+  font-weight:700;
+  color:transparent;
+  background:linear-gradient(90deg,#67e8f9,#f0abfc,#fde68a);
+  -webkit-background-clip:text;
+  background-clip:text;
+  text-shadow:0 2px 16px rgba(0,0,0,.45);
+}
+.synlive-intro-center{
+  pointer-events:none;
+  position:absolute;
+  inset:0;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 24px;
+}
+.synlive-intro-feature-card{
+  width:100%;
+  max-width:544px;
+  border-radius:28px;
+  border:1px solid rgba(255,255,255,.25);
+  background:rgba(0,0,0,.25);
+  box-shadow:0 24px 60px rgba(0,0,0,.34);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  padding:26px 20px;
+  animation:synliveFeaturePanel 10s ease-in-out infinite;
+}
+.synlive-intro-feature-card p{
+  margin:0;
+  padding-left:18px;
+  text-align:left;
+  color:#fff;
+  font-size:clamp(18px,4.9vw,22px);
+  line-height:1.28;
+  font-weight:900;
+  text-shadow:0 2px 16px rgba(0,0,0,.52);
+}
+.synlive-intro-feature-card p + p{margin-top:16px;}
+.synlive-intro-route-card{
+  position:absolute;
+  width:calc(100% - 32px);
+  max-width:672px;
+  height:50%;
+  max-height:460px;
+  border-radius:28px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.15);
+  background:transparent;
+  box-shadow:0 24px 60px rgba(0,0,0,.34);
+  opacity:0;
+  transform:translateY(100%);
+  animation:synliveRoutePanel 10s ease-in-out infinite;
+}
+.synlive-intro-route-card img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center center;
+  opacity:.4;
+}
+.synlive-intro-tap{
+  pointer-events:none;
+  position:absolute;
+  left:50%;
+  bottom:calc(24px + env(safe-area-inset-bottom,0px));
+  z-index:40;
+  transform:translateX(-50%);
+  white-space:nowrap;
+  color:rgba(255,255,255,.5);
+  font-size:12px;
+  font-weight:300;
+  letter-spacing:.25em;
+  text-transform:uppercase;
+  animation:synliveTapFade 10s ease-in-out infinite;
+}
+@keyframes synliveSceneFadeFirst{0%,12%{opacity:1}16%,100%{opacity:0}}
+@keyframes synliveSceneFade{0%,3%{opacity:0}6%,12%{opacity:1}16%,100%{opacity:0}}
+@keyframes synliveSceneDrift{0%{transform:scale(1.03) translateX(0)}100%{transform:scale(1.1) translateX(-2%)}}
+@keyframes synliveFeaturePanel{0%{opacity:0;transform:translateY(18px)}6%,78%{opacity:1;transform:translateY(0)}80%,100%{opacity:0;transform:translateY(-10px)}}
+@keyframes synliveRoutePanel{0%,69%{opacity:0;transform:translateY(100%)}70%,100%{opacity:1;transform:translateY(0)}}
+@keyframes synliveTapFade{0%,35%{opacity:0}45%,100%{opacity:.5}}
+@media (max-width:420px){
+  .synlive-intro-brand h2{font-size:50px;letter-spacing:.17em;}
+  .synlive-intro-center{padding:0 24px;}
+  .synlive-intro-feature-card{border-radius:28px;padding:26px 18px;}
+}
+@media (prefers-reduced-motion:reduce){
+  .synlive-intro-scene,.synlive-intro-feature-card,.synlive-intro-route-card,.synlive-intro-tap{animation:none!important;}
+  .synlive-intro-scene.scene-1,.synlive-intro-feature-card{opacity:1!important;transform:none!important;}
+  .synlive-intro-route-card{display:none;}
+  .synlive-intro-tap{opacity:.5!important;}
+}
+
+/* v1.0.21 — Phone verification gate */
+.phone-verify-page{
+  position:fixed;
+  inset:0;
+  z-index:10010;
+  overflow:hidden;
+  background:#031827;
+  color:#f8fafc;
+}
+.phone-verify-bg{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center center;
+  filter:saturate(1.08) contrast(1.05);
+  transform:scale(1.02);
+}
+.phone-verify-scrim{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(3,12,22,.16),rgba(3,12,22,.42) 48%,rgba(3,12,22,.75)),radial-gradient(circle at 50% 34%,rgba(255,255,255,.22),transparent 30%);
+}
+.phone-verify-content{
+  position:relative;
+  z-index:1;
+  min-height:100dvh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  padding:calc(26px + env(safe-area-inset-top,0px)) 22px calc(24px + env(safe-area-inset-bottom,0px));
+}
+.phone-verify-logo{
+  width:min(236px,74vw);
+  height:auto;
+  object-fit:contain;
+  filter:drop-shadow(0 6px 24px rgba(0,0,0,.5));
+}
+.phone-holder-stage{
+  position:relative;
+  width:min(212px,58vw);
+  height:132px;
+  margin:18px auto -14px;
+  perspective:820px;
+}
+.phone-holder-stage::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:6px;
+  width:190px;
+  height:34px;
+  transform:translateX(-50%);
+  border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,.12));
+  box-shadow:0 20px 48px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.45);
+}
+.phone-holder-device{
+  position:absolute;
+  left:50%;
+  top:0;
+  width:96px;
+  height:126px;
+  transform:translateX(-50%) rotateX(10deg) rotateZ(-2deg);
+  border-radius:24px;
+  background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(51,65,85,.94));
+  border:1px solid rgba(255,255,255,.28);
+  box-shadow:0 28px 46px rgba(0,0,0,.42),inset 0 0 0 4px rgba(255,255,255,.04);
+  z-index:2;
+}
+.phone-holder-speaker{
+  position:absolute;
+  top:10px;
+  left:50%;
+  width:30px;
+  height:4px;
+  transform:translateX(-50%);
+  border-radius:99px;
+  background:rgba(255,255,255,.22);
+}
+.phone-holder-screen{
+  position:absolute;
+  inset:19px 8px 10px;
+  border-radius:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(160deg,rgba(14,165,233,.55),rgba(34,197,94,.36));
+  color:rgba(255,255,255,.88);
+}
+.phone-verify-card{
+  width:min(420px,100%);
+  border-radius:30px;
+  border:1px solid rgba(255,255,255,.22);
+  background:linear-gradient(180deg,rgba(7,20,35,.72),rgba(7,20,35,.52));
+  box-shadow:0 24px 70px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.16);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  padding:26px 20px 22px;
+}
+.phone-verify-kicker{
+  margin:0 0 8px;
+  color:#7dd3fc;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.phone-verify-card h2{
+  margin:0;
+  color:#fff;
+  font-size:clamp(28px,7.5vw,38px);
+  line-height:1;
+  letter-spacing:-.04em;
+}
+.phone-verify-copy{
+  margin:12px 0 18px;
+  color:rgba(241,245,249,.82);
+  font-size:14px;
+  line-height:1.4;
+  font-weight:700;
+}
+.phone-input-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:12px 14px;
+  border-radius:18px;
+  border:1.5px solid rgba(255,255,255,.2);
+  background:rgba(255,255,255,.12);
+}
+.phone-input-wrap.valid{border-color:rgba(52,211,153,.72);box-shadow:0 0 0 3px rgba(52,211,153,.14)}
+.phone-input-wrap.invalid{border-color:rgba(248,113,113,.7);box-shadow:0 0 0 3px rgba(248,113,113,.13)}
+.phone-input-wrap span{
+  color:rgba(226,232,240,.78);
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.phone-input-wrap input{
+  width:100%;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#fff;
+  font-size:22px;
+  font-weight:900;
+  letter-spacing:.02em;
+}
+.phone-input-wrap input::placeholder{color:rgba(226,232,240,.48)}
+.phone-validation,
+.phone-verify-status,
+.phone-preview-code{
+  margin:10px 2px 0;
+  font-size:13px;
+  font-weight:800;
+  line-height:1.35;
+}
+.phone-validation.valid,.phone-verify-status.valid{color:#86efac}
+.phone-validation.invalid,.phone-verify-status.invalid{color:#fecaca}
+.phone-preview-code{
+  padding:10px 12px;
+  border-radius:14px;
+  color:#fde68a;
+  background:rgba(0,0,0,.22);
+  border:1px solid rgba(253,230,138,.25);
+}
+.phone-verify-primary,
+.phone-verify-secondary{
+  width:100%;
+  min-height:52px;
+  margin-top:16px;
+  border-radius:18px;
+  border:0;
+  font-size:16px;
+  font-weight:950;
+}
+.phone-verify-primary{
+  background:linear-gradient(135deg,#2563eb,#0ea5e9);
+  color:#fff;
+  box-shadow:0 18px 36px rgba(14,165,233,.32);
+}
+.phone-verify-primary:disabled{opacity:.48;box-shadow:none}
+.phone-verify-secondary{
+  margin-top:10px;
+  background:rgba(255,255,255,.12);
+  color:#e0f2fe;
+  border:1px solid rgba(255,255,255,.18);
+}
+.phone-code-block{margin-top:8px;}
+@supports not (min-height:100dvh){.phone-verify-content{min-height:100vh}}
+@media (max-height:690px){
+  .phone-verify-content{padding-top:18px;}
+  .phone-holder-stage{height:100px;margin-top:10px;}
+  .phone-holder-device{width:80px;height:104px;border-radius:20px;}
+  .phone-verify-card{padding:20px 18px;}
+  .phone-verify-card h2{font-size:28px;}
+}

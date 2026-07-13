@@ -1,4 +1,4 @@
-# Get SIR onto GitHub (so the cloud build can make your .aab)
+# Get Synlive onto GitHub (so the cloud build can make your .aab)
 
 Do this on your own computer after unzipping. It puts the `reminder-packager`
 folder into a brand-new GitHub repo, which triggers the signed-.aab workflow.
@@ -25,7 +25,7 @@ macOS / Linux / Windows (Git Bash or PowerShell):
     rm -rf .git
     git init
     git add .
-    git commit -m "SIR app: initial commit with signed-AAB CI"
+    git commit -m "Synlive app: initial commit with signed-AAB CI"
     git branch -M main
 
     # 3. Point at YOUR new GitHub repo (paste the URL from step A):

@@ -1,11 +1,12 @@
 {
-  "latestVersion": "1.0.20",
+  "latestVersion": "1.0.21",
   "minimumVersion": "1.0.0",
-  "releasedAt": "2026-07-11T16:56:00-10:00",
-  "message": "Version 1.0.20 fixes the in-app update button to open the Google Play Store.",
+  "releasedAt": "2026-07-12T17:47:00-10:00",
+  "message": "Version 1.0.21 is ready to download.",
   "releaseNotes": [
-    "The in-app update Download button now opens the Google Play Store instead of a code page.",
-    "Update links are now platform-aware so you always reach the correct app store."
+    "SIR is now branded as Synlive across the app experience.",
+    "A new high-fidelity Synlive intro and phone verification gate are included.",
+    "Send to whom now opens the device contact picker and keeps Add another contact ready for more recipients."
   ],
   "downloadUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "androidPackage": "com.sir07042026",
@@ -13,5 +14,6 @@
     "android": "https://play.google.com/store/apps/details?id=com.sir07042026",
     "ios": "",
     "web": "https://play.google.com/store/apps/details?id=com.sir07042026"
-  }
+  },
+  "title": "Synlive update available"
 }

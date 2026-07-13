@@ -1,4 +1,4 @@
-// SIR reminder sharing — Netlify fallback backend.
+// Synlive reminder sharing — Netlify fallback backend.
 // Mirrors the Base44 `reminderSync` function contract so the app can transparently
 // fall back to Netlify if Base44 integration credits are exhausted.
 //

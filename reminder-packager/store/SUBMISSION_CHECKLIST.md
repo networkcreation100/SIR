@@ -1,4 +1,4 @@
-# SIR — Submission Checklist
+# Synlive — Submission Checklist
 
 ## Accounts & setup
 - [ ] Apple Developer Program active ($99/yr)
@@ -7,7 +7,7 @@
 - [ ] iOS signing set to your Team in Xcode (auto-manage signing)
 
 ## App configuration (already done in this project)
-- [x] App name: SIR
+- [x] App name: Synlive
 - [x] Bundle/App ID: com.networkcreation.reminderpackager
 - [x] Version 1.0 / build 1
 - [x] Android permissions: INTERNET, FINE/COARSE_LOCATION, RECORD_AUDIO

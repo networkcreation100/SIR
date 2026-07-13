@@ -1,5 +1,5 @@
 // nativeNotify.js
-// Native local-notification + app-badge helper for the SIR app.
+// Native local-notification + app-badge helper for the Synlive app.
 //
 // Responsibilities:
 //   1. Schedule a local notification 15 minutes BEFORE a reminder's
@@ -186,7 +186,7 @@ export async function notifyAppUpdateAvailable(updateInfo = {}) {
   if (!granted) return { sent: false, reason: 'no-permission' };
   const version = String(updateInfo.latestVersion || updateInfo.version || 'new');
   const id = notifId(`sir-update-${version}`);
-  const title = updateInfo.title || 'SIR update available';
+  const title = updateInfo.title || 'Synlive update available';
   const body = updateInfo.message || `Version ${version} is ready to download.`;
   try {
     try { await plugin.cancel({ notifications: [{ id }] }); } catch {}

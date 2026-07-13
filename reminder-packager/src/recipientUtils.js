@@ -76,19 +76,19 @@ export function formatRecipientInput(contact) {
 export function classifyRecipients(input = '') {
   const source = String(input || '');
   const emailPattern = /[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/gi;
-  const emailMatches = Array.from(source.matchAll(emailPattern)).map(match => ({ value: match[0].trim(), index: match.index || 0, end: (match.index || 0) + match[0].length, type: 'email' }));
+  const emailMatches = Array.from(source.matchAll(emailPattern)).map(match => match[0].trim());
   const masked = source.replace(emailPattern, match => ' '.repeat(match.length));
   const phonePattern = /\+?\d[\d\s().-]{5,}\d/g;
   const phoneMatches = Array.from(masked.matchAll(phonePattern)).map(match => ({ value: match[0].replace(/\s+/g, ' ').trim(), index: match.index || 0, end: (match.index || 0) + match[0].length, type: 'phone' }));
-  const matches = [...emailMatches, ...phoneMatches].sort((a, b) => a.index - b.index);
+  const matches = phoneMatches.sort((a, b) => a.index - b.index);
 
   if (!matches.length) {
     const chunks = splitInvalidRecipientText(source);
-    return { values: [], phones: [], emails: [], invalid: dedupeRecipients(chunks), contacts: [], labels: [] };
+    return { values: [], phones: [], emails: [], invalid: dedupeRecipients([...chunks, ...emailMatches]), contacts: [], labels: [] };
   }
 
   const contacts = [];
-  const invalid = [];
+  const invalid = [...emailMatches];
   let previousEnd = 0;
 
   matches.forEach(match => {
@@ -97,8 +97,8 @@ export function classifyRecipients(input = '') {
     const hasCandidateText = splitInvalidRecipientText(rawNameSegment).length > 0;
     if (hasCandidateText && !isSafeRecipientName(candidateName)) invalid.push(...splitInvalidRecipientText(rawNameSegment));
     contacts.push({
-      value: match.type === 'phone' ? normalizePhoneRecipientValue(match.value) : match.value,
-      type: match.type,
+      value: normalizePhoneRecipientValue(match.value),
+      type: 'phone',
       name: isSafeRecipientName(candidateName) ? candidateName : '',
       label: ''
     });
@@ -121,15 +121,14 @@ export function classifyRecipients(input = '') {
 
   const values = dedupedContacts.map(contact => contact.value);
   const phones = values.filter(isPhone);
-  const emails = values.filter(value => !isPhone(value) && isEmail(value));
-  const recognizedInvalid = values.filter(value => !isPhone(value) && !isEmail(value));
+  const recognizedInvalid = values.filter(value => !isPhone(value));
   return {
-    values,
+    values: phones,
     phones,
-    emails,
+    emails: [],
     invalid: dedupeRecipients([...invalid, ...recognizedInvalid]),
-    contacts: dedupedContacts,
-    labels: dedupedContacts.map(formatRecipientLabel)
+    contacts: dedupedContacts.filter(contact => isPhone(contact.value)),
+    labels: dedupedContacts.filter(contact => isPhone(contact.value)).map(formatRecipientLabel)
   };
 }
 
@@ -174,12 +173,11 @@ export function classifyRecipientRows(rows = []) {
 
   const values = contacts.map(contact => contact.value);
   const phones = values.filter(isPhone);
-  const emails = values.filter(value => !isPhone(value) && isEmail(value));
-  const recognizedInvalid = values.filter(value => !isPhone(value) && !isEmail(value));
+  const recognizedInvalid = values.filter(value => !isPhone(value));
   return {
-    values,
+    values: phones,
     phones,
-    emails,
+    emails: [],
     invalid: dedupeRecipients([...invalid, ...recognizedInvalid]),
     contacts,
     labels: contacts.map(formatRecipientLabel),

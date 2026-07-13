@@ -1,8 +1,8 @@
-# SIR — App Store Publishing Guide
+# Synlive — App Store Publishing Guide
 
-Everything you need to take **SIR (Smart Interactive Reminder)** from this source to live on the Apple App Store and Google Play.
+Everything you need to take **Synlive (smart interactive reminder)** from this source to live on the Apple App Store and Google Play.
 
-- **App name:** SIR
+- **App name:** Synlive
 - **Bundle / Application ID:** `com.networkcreation.reminderpackager`
 - **Version:** 1.0 (build 1)
 - **Framework:** React + Vite + Capacitor

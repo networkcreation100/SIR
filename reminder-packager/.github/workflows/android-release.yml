@@ -1,6 +1,6 @@
 name: Android Release (signed AAB → Play)
 
-# Builds a signed Android App Bundle (.aab) for SIR and, when configured,
+# Builds a signed Android App Bundle (.aab) for Synlive and, when configured,
 # uploads it straight to your Google Play account (internal testing track).
 #
 # Trigger it manually from the GitHub "Actions" tab (Run workflow), or it runs
