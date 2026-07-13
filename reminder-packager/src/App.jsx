@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createMailto, createSmsLink, formatDue, getStatus, makeAttachmentFiles, buildReminderSnapshotSvg, buildReminderMessageBody, normalizeReminder, urgencyLevels, isCircleGesture, createReminderId } from './reminderEngine.js';
 import './styles.css';
 import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, LocateFixed, Maximize2, Minimize2, MapPin, Mic, RefreshCw, Mail, MessageCircle, Heart, ShieldCheck, Settings2, Send, Smartphone, Sparkles, X } from './icons.jsx';
@@ -28,7 +28,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.21').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.22').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -396,8 +396,6 @@ const initialReminder = { ...normalizeReminder({
 
 
 const VERIFIED_PHONE_KEY = 'synlive:verified-phone';
-const PHONE_VERIFY_SESSION_MS = 5 * 60 * 1000;
-
 function normalizePhoneForVerification(value = '') {
   const raw = String(value || '').trim();
   const digits = raw.replace(/\D/g, '');
@@ -429,58 +427,6 @@ function saveVerifiedPhone(phone) {
   const record = { phone: normalized.e164, displayPhone: formatPhoneForDisplay(normalized.e164), verifiedAt: new Date().toISOString(), provider: 'phone-verification' };
   try { window.localStorage.setItem(VERIFIED_PHONE_KEY, JSON.stringify(record)); } catch {}
   return record;
-}
-
-function createVerificationCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-function startIntroAmbientAudio(audioRef) {
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass || audioRef.current?.ctx) return;
-    const ctx = new AudioContextClass();
-    const master = ctx.createGain();
-    master.gain.setValueAtTime(0, ctx.currentTime);
-    master.gain.linearRampToValueAtTime(0.055, ctx.currentTime + 1.6);
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(620, ctx.currentTime);
-    filter.Q.setValueAtTime(0.8, ctx.currentTime);
-    filter.connect(master);
-    master.connect(ctx.destination);
-    const nodes = [110, 146.83, 196].map((freq, index) => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      osc.detune.setValueAtTime((index - 1) * 6, ctx.currentTime);
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.22, ctx.currentTime);
-      const lfo = ctx.createOscillator();
-      lfo.frequency.setValueAtTime(0.045 + index * 0.018, ctx.currentTime);
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.setValueAtTime(0.08, ctx.currentTime);
-      lfo.connect(lfoGain); lfoGain.connect(gain.gain);
-      osc.connect(gain); gain.connect(filter);
-      osc.start(); lfo.start();
-      return { osc, lfo, gain };
-    });
-    audioRef.current = { ctx, nodes, master };
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-  } catch {}
-}
-
-function stopIntroAmbientAudio(audioRef) {
-  const current = audioRef.current;
-  if (!current?.ctx) return;
-  try {
-    current.master?.gain?.setTargetAtTime(0, current.ctx.currentTime, 0.25);
-    window.setTimeout(() => {
-      current.nodes?.forEach(node => { try { node.osc?.stop(); node.lfo?.stop(); } catch {} });
-      try { current.ctx?.close?.(); } catch {}
-    }, 500);
-  } catch {}
-  audioRef.current = null;
 }
 
 const BACKGROUND_BLANK_REMINDER_ID = 'sir-preview-background-blank';
@@ -2375,87 +2321,46 @@ function openDeliveryLinkAfterConfirmation(href) {
 
 function PhoneVerificationGate({ onVerified }) {
   const [phoneInput, setPhoneInput] = useState('');
-  const [stage, setStage] = useState('phone');
-  const [codeInput, setCodeInput] = useState('');
-  const [challenge, setChallenge] = useState(null);
   const [status, setStatus] = useState('');
   const validation = normalizePhoneForVerification(phoneInput);
-  const expiresInSeconds = challenge ? Math.max(0, Math.ceil((challenge.expiresAt - Date.now()) / 1000)) : 0;
-  const expiresLabel = `${Math.floor(expiresInSeconds / 60)}:${String(expiresInSeconds % 60).padStart(2, '0')}`;
 
-  useEffect(() => {
-    if (!challenge) return;
-    const timer = window.setInterval(() => {
-      if (Date.now() > challenge.expiresAt) {
-        setChallenge(null);
-        setStage('phone');
-        setCodeInput('');
-        setStatus('Verification code expired. Please re-enter your phone number.');
-      } else setChallenge(current => current ? { ...current } : current);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [challenge?.expiresAt]);
-
-  function requestCode() {
+  function continueWithPhone() {
     if (!validation.valid) {
       setStatus(validation.message);
       return;
     }
-    const code = createVerificationCode();
-    setChallenge({ phone: validation.e164, code, expiresAt: Date.now() + PHONE_VERIFY_SESSION_MS });
-    setStage('code');
-    setCodeInput('');
-    setStatus('Verification code sent. Enter it within 5 minutes.');
-  }
-
-  function verifyCode() {
-    if (!challenge || Date.now() > challenge.expiresAt) {
-      setChallenge(null);
-      setStage('phone');
-      setCodeInput('');
-      setStatus('Verification code expired. Please re-enter your phone number.');
-      return;
-    }
-    if (String(codeInput).trim() !== challenge.code) {
-      setStatus('That code is incorrect. Please re-enter your phone number and request a new code.');
-      setChallenge(null);
-      setStage('phone');
-      setCodeInput('');
-      return;
-    }
-    const record = saveVerifiedPhone(challenge.phone);
+    const record = saveVerifiedPhone(validation.e164);
     if (record) onVerified?.(record);
+    else setStatus('Please enter a valid phone number.');
   }
 
   return <section className="phone-verify-page" aria-label="Phone verification">
     <img className="phone-verify-bg" src="synlive-phone-bg.png" alt="" aria-hidden="true" />
     <div className="phone-verify-scrim" aria-hidden="true" />
     <div className="phone-verify-content">
-      <img className="phone-verify-logo" src="synlive-phone-logo.png" alt="Synlive" />
-      <div className="phone-holder-stage" aria-hidden="true"><div className="phone-holder-device"><div className="phone-holder-speaker" /><div className="phone-holder-screen"><Smartphone size={34}/></div></div></div>
-      <div className="phone-verify-card">
-        <p className="phone-verify-kicker">Phone-based verification only</p>
-        <h2>Please enter your phone number.</h2>
-        <p className="phone-verify-copy">This number becomes the sender identity when you send a reminder.</p>
-        <label className={`phone-input-wrap ${phoneInput ? (validation.valid ? 'valid' : 'invalid') : ''}`}>
-          <span>Phone number</span>
-          <input value={phoneInput} onChange={event => { setPhoneInput(event.target.value); setStatus(''); }} inputMode="tel" autoComplete="tel" placeholder="(808) 555-0123" disabled={stage === 'code'} />
-        </label>
-        {phoneInput && <p className={`phone-validation ${validation.valid ? 'valid' : 'invalid'}`}>{validation.message}{validation.valid ? ` · ${formatPhoneForDisplay(validation.e164)}` : ''}</p>}
-        {stage === 'phone' ? <button type="button" className="phone-verify-primary" disabled={!validation.valid} onClick={requestCode}>Send verification code</button> : <div className="phone-code-block">
-          <label className="phone-input-wrap"><span>Verification code</span><input value={codeInput} onChange={event => setCodeInput(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" /></label>
-          <p className="phone-validation valid">Code expires in {expiresLabel}</p>
-          <button type="button" className="phone-verify-primary" disabled={codeInput.length !== 6} onClick={verifyCode}>Verify and continue</button>
-          <button type="button" className="phone-verify-secondary" onClick={() => { setStage('phone'); setChallenge(null); setCodeInput(''); setStatus('Please re-enter your phone number.'); }}>Re-enter phone number</button>
-        </div>}
-        {challenge?.code && <p className="phone-preview-code">Preview code: <strong>{challenge.code}</strong></p>}
-        {status && <p className={`phone-verify-status ${/sent|valid|verified/i.test(status) ? 'valid' : 'invalid'}`}>{status}</p>}
+      <div className="phone-verify-brand" aria-label="Synlive">
+        <h1>Synlive</h1>
+        <p>is for friends, family, and group coordination</p>
+      </div>
+      <div className="phone-verify-center-stack">
+        <div className="phone-verify-card">
+          <p className="phone-verify-kicker">Phone verification</p>
+          <h2>Please enter your phone number.</h2>
+          <label className={`phone-input-wrap ${phoneInput ? (validation.valid ? 'valid' : 'invalid') : ''}`}>
+            <span>Phone</span>
+            <input value={phoneInput} onChange={event => { setPhoneInput(event.target.value); setStatus(''); }} inputMode="tel" autoComplete="tel" placeholder="(808) 555-0123" aria-invalid={phoneInput ? !validation.valid : undefined} />
+          </label>
+          {phoneInput && <p className={`phone-validation ${validation.valid ? 'valid' : 'invalid'}`}>{validation.valid ? `Looks good: ${formatPhoneForDisplay(validation.e164)}` : validation.message}</p>}
+          <button type="button" className="phone-verify-primary" disabled={!validation.valid} onClick={continueWithPhone}>Continue</button>
+          {status && <p className={`phone-verify-status ${/valid|look/i.test(status) ? 'valid' : 'invalid'}`}>{status}</p>}
+        </div>
+        <p className="phone-verify-consent">By continuing, you confirm that this phone number is yours and consent to use Synlive reminders.</p>
       </div>
     </div>
   </section>;
 }
 
-function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress, mapOnly = false, verifiedSenderPhone = '', pickedContactBatch = { id: 0, rows: [] }, onPickedContactRowsConsumed }) {
+function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRecipientsChange, onValidRecipientsChange, showRecipientsInPreview, onShowRecipientsChange, initialRecipientText = '', onSent, onSendStarted, onSendProgress, mapOnly = false, verifiedSenderPhone = '', onSenderVerificationMismatch, pickedContactBatch = { id: 0, rows: [] }, onPickedContactRowsConsumed }) {
   const [recipientRows, setRecipientRows] = useState(() => rowsFromRecipientText(initialRecipientText));
   const [message, setMessage] = useState('');
   const [recipientNotice, setRecipientNotice] = useState('');
@@ -2498,6 +2403,14 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
     if (rows.length) appendPickedRecipientRows(rows, 'Contact selected from your device. The next box is ready.');
   }, [initialRecipientText]);
 
+
+  function senderPhoneNeedsReverification() {
+    const stored = normalizePhoneForVerification(verifiedSenderPhone);
+    const current = normalizePhoneForVerification(reminder.senderPhone || reminder.sender || '');
+    if (!stored.valid) return true;
+    if (!current.valid) return false;
+    return current.e164 !== stored.e164;
+  }
 
   function getPreparedShareInputs() {
     const displayRecipients = recipientLabels.length ? recipientLabels : recipients;
@@ -2766,7 +2679,12 @@ function RecipientPanel({ reminder, onClose, onPreview, collapsed = false, onRec
   }, [valid, recipients.join('|'), recipientLabels.join('|'), phones.length, reminder.title, reminder.date, reminder.time, reminder.location, JSON.stringify(reminder.locationPin || null)]);
 
   async function share() {
-        if (invalid.length) {
+    if (senderPhoneNeedsReverification()) {
+      setMessage('Please verify your phone number again before sending.');
+      onSenderVerificationMismatch?.();
+      return;
+    }
+    if (invalid.length) {
       setMessage(buildValidationFailureMessage(invalid, phones));
       return;
     }
@@ -2896,11 +2814,23 @@ function App() {
   const [sendCollapsed, setSendCollapsed] = useState(false);
   const [sentConfirmation, setSentConfirmation] = useState(null);
   const [introOpen, setIntroOpen] = useState(true);
-  const [introMuted, setIntroMuted] = useState(false);
+  const [introStep, setIntroStep] = useState(0);
   const [verifiedPhone, setVerifiedPhone] = useState(() => readVerifiedPhone());
-  const introAudioRef = useRef(null);
   const [updateAlert, setUpdateAlert] = useState(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const dismissIntroAndShowPhoneGate = useCallback(() => {
+    setIntroOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!introOpen) return undefined;
+    const duration = introStep === 0 ? 10000 : 5000;
+    const timer = window.setTimeout(() => {
+      setIntroStep(current => current === 0 ? 1 : 0);
+    }, duration);
+    return () => window.clearTimeout(timer);
+  }, [introOpen, introStep]);
+
   // When the Send bar is docked as a collapsed Back/Send bar, flag the body so
   // the preview card underneath gets bottom padding and can scroll fully clear
   // of the fixed bar (mirrors the recipient-edit bottom-bar behavior).
@@ -2910,21 +2840,20 @@ function App() {
     return () => document.body.classList.remove('sir-send-collapsed');
   }, [sendOpen, sendCollapsed]);
 
-  useEffect(() => {
-    if (introOpen && !introMuted) {
-      startIntroAmbientAudio(introAudioRef);
-      const unlock = () => startIntroAmbientAudio(introAudioRef);
-      window.addEventListener('pointerdown', unlock, { once: true });
-      return () => { window.removeEventListener('pointerdown', unlock); stopIntroAmbientAudio(introAudioRef); };
-    }
-    stopIntroAmbientAudio(introAudioRef);
-    return () => stopIntroAmbientAudio(introAudioRef);
-  }, [introOpen, introMuted]);
 
   useEffect(() => {
     if (!verifiedPhone?.phone) return;
     setForm(prev => ({ ...prev, sender: verifiedPhone.phone, senderPhone: verifiedPhone.phone }));
   }, [verifiedPhone?.phone]);
+
+  function requirePhoneReverification() {
+    try { window.localStorage.removeItem(VERIFIED_PHONE_KEY); } catch {}
+    setVerifiedPhone(null);
+    setSendOpen(false);
+    setSendCollapsed(false);
+    setSendMapOnly(false);
+    setSentConfirmation(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -3898,29 +3827,31 @@ function App() {
 
   return <main className="app-shell">
     {!introOpen && !verifiedPhone?.phone && <PhoneVerificationGate onVerified={record => setVerifiedPhone(record)} />}
-    {introOpen && <div className="synlive-intro-overlay source-display" role="button" tabIndex={0} aria-label="Tap to continue to Synlive" onClick={() => setIntroOpen(false)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setIntroOpen(false); }}>
-      <div className="synlive-intro-scenes" aria-hidden="true">
-        {Array.from({ length: 8 }, (_, index) => <img key={index} className={`synlive-intro-scene scene-${index + 1}`} src={`synlive-intro-scene-${index + 1}.png`} alt="" />)}
-        <div className="synlive-intro-gradient" />
-      </div>
-      <button type="button" className="synlive-intro-sound" aria-label={introMuted ? 'Play ambient sound' : 'Mute ambient sound'} onClick={(event) => { event.stopPropagation(); setIntroMuted(value => !value); }}>
-        {introMuted ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z"/><path d="m17 9 4 4m0-4-4 4"/></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4Z"/><path d="M16 8.5c1.2 1 1.8 2.2 1.8 3.5S17.2 14.5 16 15.5"/><path d="M18.5 6c2 1.7 3 3.7 3 6s-1 4.3-3 6"/></svg>}
-      </button>
-      <div className="synlive-intro-brand" aria-hidden="true">
-        <h2>Synlive</h2>
-        <p>is for friends, family, and group coordination</p>
-      </div>
-      <div className="synlive-intro-center" aria-hidden="true">
-        <div className="synlive-intro-feature-card">
-          <p>• Share real-time location</p>
-          <p>• Stop sharing at any time</p>
-          <p>• Update meeting location</p>
-        </div>
-        <div className="synlive-intro-route-card">
-          <img src="synlive-intro-map.png" alt="" />
+    {introOpen && <div className={`synlive-intro-overlay two-page-loop page-${introStep + 1}`} role="button" tabIndex={0} aria-label="Tap to continue to Synlive" onClick={dismissIntroAndShowPhoneGate} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') dismissIntroAndShowPhoneGate(); }}>
+      <div className="synlive-intro-slide synlive-intro-slide-one" aria-hidden={introStep !== 0}>
+        <div className="synlive-intro-motion-bg" aria-hidden="true" />
+        <div className="synlive-intro-vignette" aria-hidden="true" />
+        <div className="synlive-intro-content">
+          <div className="synlive-intro-brand">
+            <h1>Synlive</h1>
+            <p>is for friends, family, and group coordination</p>
+          </div>
+          <p className="synlive-intro-center-message">This app creates a temporary shared file so everyone can see the meeting location and share their real-time location. Anyone can turn off live location or change meeting spot anytime.</p>
+          <span className="synlive-intro-tap">Tap to continue</span>
         </div>
       </div>
-      <div className="synlive-intro-tap" aria-hidden="true">Tap to continue</div>
+      <div className="synlive-intro-slide synlive-intro-slide-two" aria-hidden={introStep !== 1}>
+        <div className="synlive-intro-page2-bg" aria-hidden="true" />
+        <div className="synlive-intro-vignette" aria-hidden="true" />
+        <div className="synlive-intro-content synlive-intro-page2-content">
+          <div className="synlive-intro-brand">
+            <h1>Synlive</h1>
+            <p>is for friends, family, and group coordination</p>
+          </div>
+          <img className="synlive-intro-midtext" src="/synlive-intro-midtext.png?v=1022-midtext-transparent" alt="Group routes converging on a shared meeting location" />
+          <span className="synlive-intro-tap">Tap to continue</span>
+        </div>
+      </div>
     </div>}
     {updateAlert && updateDialogOpen && <div className="update-dialog-overlay" role="presentation" onClick={() => setUpdateDialogOpen(false)}>
       <div className="update-dialog-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" onClick={(e) => e.stopPropagation()}>
@@ -4010,12 +3941,12 @@ function App() {
         </div>
       </section>
       {!compactMode && <div className="step-card step-card-3 send-step-card">
-        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} onClose={() => { setSendOpen(false); setSendMapOnly(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} onClose={() => { setSendOpen(false); setSendMapOnly(false); setStepFront(2); }} onPreview={() => setStepFront(2)} onRecipientsChange={setPreviewRecipients} onValidRecipientsChange={setReviewTabsReady} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} onSenderVerificationMismatch={requirePhoneReverification} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
       </div>}
     </section>
     {compactMode && sendOpen && <div className={`send-modal-backdrop ${sendCollapsed ? 'collapsed-preview-mode' : ''}`} role="dialog" aria-modal="true" aria-label={sendCollapsed ? 'Collapsed send options' : 'Send options'} onClick={() => { if (!sendCollapsed) { setSendOpen(false); setSendCollapsed(false); } }}>
       <div className={`send-modal-shell ${sendCollapsed ? 'collapsed-preview-shell' : ''}`} onClick={e => e.stopPropagation()}>
-        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); setSendMapOnly(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
+        <RecipientPanel reminder={activeReminder} mapOnly={sendMapOnly} collapsed={sendCollapsed} onClose={() => { setSendOpen(false); setSendCollapsed(false); setSendMapOnly(false); }} onPreview={() => setSendCollapsed(value => !value)} onRecipientsChange={setPreviewRecipients} showRecipientsInPreview={showRecipientsInPreview} onShowRecipientsChange={setShowRecipientsInPreview} initialRecipientText={voiceRecipientText} onSent={handleReminderSent} onSendStarted={handleReminderSendStarted} onSendProgress={handleSendProgress} verifiedSenderPhone={verifiedPhone?.phone || ''} onSenderVerificationMismatch={requirePhoneReverification} pickedContactBatch={pendingPickedContactBatch} onPickedContactRowsConsumed={() => setPendingPickedContactBatch(batch => ({ ...batch, rows: [] }))} />
       </div>
     </div>}
     {sentConfirmation && <div className="sent-confirm-backdrop" role="dialog" aria-modal="true" aria-label={sentConfirmation.pending ? 'Sending reminder' : sentConfirmation.error ? 'Reminder send error' : 'Reminder sent'} onClick={() => { if (!sentConfirmation.pending) setSentConfirmation(null); }}>
