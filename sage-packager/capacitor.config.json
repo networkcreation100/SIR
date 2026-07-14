@@ -1,0 +1,10 @@
+{
+  "appId": "com.networkcreation.sage",
+  "appName": "SAGE",
+  "webDir": "dist",
+  "server": {
+    "url": "https://app.base44.com/apps/6a5215a50e957bb9c1b81531",
+    "cleartext": false,
+    "androidScheme": "https"
+  }
+}

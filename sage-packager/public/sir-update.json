@@ -1,0 +1,19 @@
+{
+  "latestVersion": "1.0.22",
+  "minimumVersion": "1.0.0",
+  "releasedAt": "2026-07-13T13:15:00-10:00",
+  "message": "Version 1.0.22 is ready to download.",
+  "releaseNotes": [
+    "Intro now loops continuously: the first SAGE screen displays for 10 seconds, then the second map screen displays for 5 seconds.",
+    "The second intro screen uses the road background with the transparent group-route map graphic centered on the page.",
+    "Tapping the intro still continues directly to the phone verification screen."
+  ],
+  "downloadUrl": "https://play.google.com/store/apps/details?id=com.networkcreation.sage",
+  "androidPackage": "com.networkcreation.sage",
+  "downloadUrls": {
+    "android": "https://play.google.com/store/apps/details?id=com.networkcreation.sage",
+    "ios": "",
+    "web": "https://play.google.com/store/apps/details?id=com.networkcreation.sage"
+  },
+  "title": "SAGE update available"
+}

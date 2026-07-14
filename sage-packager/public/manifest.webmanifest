@@ -1,0 +1,17 @@
+{
+  "name": "SAGE smart interactive reminder",
+  "short_name": "SAGE",
+  "description": "Create and share smart interactive reminders with schedule, location, route, voice, and recipient controls.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff7ed",
+  "theme_color": "#f97316",
+  "icons": [
+    {
+      "src": "/sir-icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

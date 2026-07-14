@@ -1,0 +1,40 @@
+{
+  "name": "sage-android-packager",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run --environment jsdom",
+    "audit:local": "npm run test && npm run build",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npx cap open android",
+    "cap:ios": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor-community/contacts": "^7.2.0",
+    "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor/android": "latest",
+    "@capacitor/core": "latest",
+    "@capacitor/ios": "latest",
+    "@capacitor/local-notifications": "^7.0.7",
+    "@netlify/blobs": "^10.7.9",
+    "@vitejs/plugin-react": "latest",
+    "leaflet": "^1.9.4",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.6.7",
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "jsdom": "latest",
+    "playwright": "^1.61.1",
+    "typescript": "latest",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "latest"
+  }
+}

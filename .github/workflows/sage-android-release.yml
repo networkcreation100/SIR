@@ -1,0 +1,110 @@
+name: SAGE Android Release (signed AAB)
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionName:
+        description: 'Version name (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      versionCode:
+        description: 'Version code (integer, must increase each upload)'
+        required: true
+        default: '1'
+
+jobs:
+  build-sage-signed-aab:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sage-packager
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sage-packager/package-lock.json
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SAGE web shell
+        env:
+          VITE_SAGE_APP_VERSION: ${{ github.event.inputs.versionName }}
+        run: npm run build
+
+      - name: Capacitor sync (android)
+        run: npx cap sync android
+
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64_VALUE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, re, sys
+          raw = os.environ.get('ANDROID_KEYSTORE_BASE64_VALUE', '')
+          clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
+          if not clean:
+              print('::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty.')
+              sys.exit(1)
+          clean += '=' * ((4 - len(clean) % 4) % 4)
+          data = base64.b64decode(clean, validate=False)
+          if len(data) < 1000:
+              print('::error::Decoded keystore is unexpectedly small.')
+              sys.exit(1)
+          os.makedirs('android/app', exist_ok=True)
+          with open('android/app/sage-upload.jks', 'wb') as f:
+              f.write(data)
+          print(f'Decoded upload keystore ({len(data)} bytes).')
+          PY
+
+      - name: Write key.properties
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=sage-upload.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Validate keystore credentials
+        run: |
+          keytool -list -keystore android/app/sage-upload.jks \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -alias "${{ secrets.ANDROID_KEY_ALIAS }}" > /tmp/ksout.txt 2>&1 || {
+              echo "::error::Keystore validation failed.";
+              cat /tmp/ksout.txt;
+              exit 1;
+            }
+
+      - name: Build signed SAGE AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease \
+            -PsageVersionName=${{ github.event.inputs.versionName }} \
+            -PsageVersionCode=${{ github.event.inputs.versionCode }} \
+            --no-daemon --stacktrace --info 2>&1 | tail -120
+
+      - name: Upload SAGE AAB as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sage-release-aab-${{ github.event.inputs.versionName }}
+          path: sage-packager/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Clean up secrets on runner
+        if: always()
+        run: rm -f android/app/sage-upload.jks android/key.properties
