@@ -2831,7 +2831,7 @@ body.sir-send-collapsed{overflow-y:auto;}
   will-change:transform,background-position;
 }
 .synlive-intro-motion-bg{
-  background-image:url('/synlive-intro-single-bg.png?v=1022-bg-e9dc70bcc-public');
+  background-image:url('/synlive-intro-single-bg.png?v=1022-intro1-bluebeach-20260724');
   filter:saturate(1.1) contrast(1.03) brightness(1.02);
 }
 .synlive-intro-page2-bg{
@@ -3207,3 +3207,25 @@ body.sir-send-collapsed{overflow-y:auto;}
   .phone-verify-consent{font-size:10px;margin-top:8px;}
   .phone-preview-code{padding:7px 9px;}
 }
+
+
+/* Full-map destination pin reminder tooltip */
+.sir-destination-reminder-tooltip.leaflet-tooltip{
+  width:min(190px,calc(100vw - 48px));
+  max-width:calc(100vw - 48px);
+  box-sizing:border-box;
+  padding:0;
+  border:1px solid rgba(255,255,255,.38);
+  border-radius:9px;
+  background:rgba(15,23,42,.42);
+  color:#fff;
+  box-shadow:0 5px 14px rgba(15,23,42,.18);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+  white-space:normal;
+}
+.sir-destination-reminder-tooltip.leaflet-tooltip-top::before{border-top-color:rgba(15,23,42,.42)}
+.sir-destination-reminder-tooltip.leaflet-tooltip-bottom::before{border-bottom-color:rgba(15,23,42,.42)}
+.sir-destination-tooltip-content{display:grid;gap:2px;padding:6px 8px;line-height:1.12;text-align:center}
+.sir-destination-tooltip-title{display:block;font-size:12px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sir-destination-tooltip-due{display:block;font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

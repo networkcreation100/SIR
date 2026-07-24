@@ -28,7 +28,7 @@ const NETLIFY_ROUTE_PROXY_URL = `${NETLIFY_FALLBACK_BASE}/api/route-proxy`;
 // nothing on the recipient's phone. That is why recipient reminders worked in the
 // browser/tunnel test but failed after publishing to the stores.
 const PUBLIC_SHARE_BASE = 'https://networkcreation100.github.io/SIR/';
-const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.22').replace(/^v/i, '');
+const CURRENT_APP_VERSION = (import.meta.env.VITE_SIR_APP_VERSION || '1.0.23').replace(/^v/i, '');
 const UPDATE_MANIFEST_REMOTE_URL = 'https://networkcreation100.github.io/SIR/sir-update.json';
 const DEFAULT_ANDROID_DOWNLOAD_URL = 'https://play.google.com/store/apps/details?id=com.sir07042026';
 const DEFAULT_IOS_DOWNLOAD_URL = '';
@@ -1160,10 +1160,55 @@ function PreviewLiveMap({ location, pin, sharedLocations = [], onPinLocation, on
         onPinLocation(next.lat, next.lng);
       });
     }
-    addressMarker.current.bindTooltip(onPinLocation ? 'Drag pin to move destination' : 'Pinned destination', { permanent: false });
     map.current.panTo(latLng, { animate: true, duration: 0.25 });
     setTimeout(() => map.current?.invalidateSize(), 100);
   }, [resolvedPin, mapReady, onPinLocation]);
+
+  // Keep the destination tooltip synchronized with live reminder edits. In the
+  // compact map it remains a short pin hint; in full-map view it shows the
+  // reminder text and scheduled date/time. Leaflet handles desktop hover, and
+  // the click handler makes the same tooltip available on touch devices.
+  useEffect(() => {
+    const marker = addressMarker.current;
+    if (!marker) return;
+    marker.unbindTooltip();
+    const title = String(expandedInfo?.title || '').trim();
+    const due = String(expandedInfo?.due || '').trim();
+    const hasReminderDetails = mapExpanded && Boolean(title || due);
+    let handleDestinationTap = null;
+
+    if (hasReminderDetails) {
+      const content = document.createElement('div');
+      content.className = 'sir-destination-tooltip-content';
+      if (title) {
+        const titleNode = document.createElement('strong');
+        titleNode.className = 'sir-destination-tooltip-title';
+        titleNode.textContent = title;
+        content.appendChild(titleNode);
+      }
+      if (due) {
+        const dueNode = document.createElement('span');
+        dueNode.className = 'sir-destination-tooltip-due';
+        dueNode.textContent = due;
+        content.appendChild(dueNode);
+      }
+      marker.bindTooltip(content, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -36],
+        opacity: 1,
+        className: 'sir-destination-reminder-tooltip'
+      });
+      handleDestinationTap = () => marker.openTooltip();
+      marker.on('click', handleDestinationTap);
+    } else {
+      marker.bindTooltip(onPinLocation ? 'Drag pin to move destination' : 'Pinned destination', { permanent: false });
+    }
+
+    return () => {
+      if (handleDestinationTap) marker.off('click', handleDestinationTap);
+    };
+  }, [mapExpanded, expandedInfo?.title, expandedInfo?.due, onPinLocation, resolvedPin, mapReady]);
 
   useEffect(() => {
     const L = leaflet.current;
@@ -1873,7 +1918,7 @@ function ReminderCard({ reminder, onEdit, onForward, onDelete, recipientMode = f
     {expanded && <div className="preview-summary">
       {!compactMode && <div className="preview-location-timezone-row"><p><MapPin size={15}/> <span>{locationLabel}</span>{canEditMapPin && editMode && <button type="button" className="preview-pin-location-button" aria-label="Manually pin correct location" title="Manually pin correct location" onClick={() => setPreviewPinPickerOpen(open => !open)}><MapPin size={14}/> Pin</button>}</p></div>}
       {compactMode && previewPinPickerOpen && canEditMapPin && <section className="map-card preview-pin-picker" aria-label="Manual preview location pin"><p className="map-view-label">Zoom-Out View</p><LocationMap pin={reminder.locationPin} onSelect={(lat, lng) => onPinLocation?.(lat, lng)} syncBus={mapSync.current} syncRole="out" initialZoom={13} /><p className="map-help"><MapPin size={14}/> Tap the map to drop the correct pin for this reminder.</p></section>}
-      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} expandedInfo={recipientMode ? { title: cleanPreviewCardTitle(reminder.title), due: dueLabel, address: locationLabel } : null} /></div>}
+      {(forceMap || hasMappableLocation(reminder)) && <div className={`preview-live-map-wrap ${(editMode || (compactMode && previewPinPickerOpen)) ? 'zoom-in-view' : ''}`}>{(editMode || (compactMode && previewPinPickerOpen)) && <p className="map-view-label">Zoom-In View</p>}<PreviewLiveMap location={reminder.location} pin={reminder.locationPin} sharedLocations={reminder.sharedLocations} onPinLocation={canEditMapPin ? onPinLocation : undefined} onLocationShared={onLocationShared} onSendMapOnly={onSendMapOnly} hideMapIcons={editMode && !recipientMode} syncBus={(editMode || (compactMode && previewPinPickerOpen)) ? mapSync.current : null} syncRole="in" initialZoom={(editMode || (compactMode && previewPinPickerOpen)) ? 17 : null} expandedInfo={{ title: cleanPreviewCardTitle(typedTitle || reminder.title), due: dueLabel, address: locationLabel }} /></div>}
       {reminder.notes && <p className="preview-instruction">{reminder.notes.length > 80 ? `${reminder.notes.slice(0, 80)}…` : reminder.notes}</p>}
       {previewRecipients.length > 0 && showRecipients && <div className="preview-recipients">
         <div><strong>Recipients</strong><span>{previewRecipients.join(', ')}</span></div>
@@ -2335,7 +2380,7 @@ function PhoneVerificationGate({ onVerified }) {
   }
 
   return <section className="phone-verify-page" aria-label="Phone verification">
-    <img className="phone-verify-bg" src="synlive-phone-bg.png" alt="" aria-hidden="true" />
+    <img className="phone-verify-bg" src="/synlive-phone-bg.png?v=1022-phone-beach-20260724" alt="" aria-hidden="true" />
     <div className="phone-verify-scrim" aria-hidden="true" />
     <div className="phone-verify-content">
       <div className="phone-verify-brand" aria-label="Synlive">
@@ -3836,7 +3881,7 @@ function App() {
             <h1>Synlive</h1>
             <p>is for friends, family, and group coordination</p>
           </div>
-          <p className="synlive-intro-center-message">This app creates a temporary shared file so everyone can see the meeting location and share their real-time location. Anyone can turn off live location or change meeting spot anytime.</p>
+          <p className="synlive-intro-center-message">This app creates a shared file you can text to friends and family. They can share their real time location in the shared file without downloading this app. They can turn their location on or off anytime and update their meeting place and time whenever they want.</p>
           <span className="synlive-intro-tap">Tap to continue</span>
         </div>
       </div>
