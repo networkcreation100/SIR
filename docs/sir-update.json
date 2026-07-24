@@ -1,12 +1,12 @@
 {
-  "latestVersion": "1.0.23",
+  "latestVersion": "1.0.24",
   "minimumVersion": "1.0.0",
-  "releasedAt": "2026-07-23T21:11:00-10:00",
-  "message": "Version 1.0.23 is ready to download.",
+  "releasedAt": "2026-07-23T21:23:00-10:00",
+  "message": "Version 1.0.24 is ready to download.",
   "releaseNotes": [
-    "Full-map destination pins now show the reminder text and scheduled date/time on hover or tap.",
-    "The destination tooltip is a compact, centered, translucent two-line label positioned directly above the pin.",
-    "Updated Synlive intro and phone-verification beach backgrounds and refreshed the intro explanation text."
+    "Updated Synlive to target Android 16 (API level 36) for Google Play policy compliance.",
+    "Upgraded the Android Gradle plugin to the API 36-compatible toolchain.",
+    "Preserved the v1.0.23 destination tooltip, intro backgrounds, and reminder-sharing behavior."
   ],
   "downloadUrl": "https://play.google.com/store/apps/details?id=com.sir07042026",
   "androidPackage": "com.sir07042026",
